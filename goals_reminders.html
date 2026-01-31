@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Stryde - Goals &amp; Reminders</title>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#13ec6d",
+                        "background-light": "#f6f8f7",
+                        "background-dark": "#102218",
+                        "surface-dark": "#1c2720",
+                        "border-dark": "#3b5445",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Lexend', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Custom Toggle Style */
+        .toggle-checkbox:checked {
+            right: 0;
+            background-color: #13ec6d;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #13ec6d;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen pb-20">
+<!-- Top App Bar -->
+<div class="sticky top-0 z-50 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-gray-200 dark:border-border-dark">
+<div class="flex items-center p-4 justify-between max-w-lg mx-auto">
+<div class="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-surface-dark cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-2xl">arrow_back_ios_new</span>
+</div>
+<h2 class="text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center pr-10">Goals &amp; Reminders</h2>
+</div>
+</div>
+<main class="max-w-lg mx-auto px-4 py-6 space-y-8">
+<!-- Smart Goal Recommendation (Card) -->
+<section>
+<div class="flex flex-col items-stretch justify-start rounded-xl shadow-xl bg-surface-dark border border-primary/20 overflow-hidden">
+<div class="w-full bg-center bg-no-repeat aspect-[21/9] bg-cover relative" data-alt="abstract green energy waves and mountain silhouettes" style='background-image: linear-gradient(to bottom, rgba(19, 236, 109, 0.1), rgba(16, 34, 24, 1)), url("https://lh3.googleusercontent.com/aida-public/AB6AXuADrS7p_CGDLYCVjCENDOWhlLgumed37KNt8G5xa-L5UwRd9QYVZ6g9j0H3qZmFKfcWD6zznBBbKFGLbPV2gFKHrXPjF8swlwpRqjainVAfKyKgrSA1XrLTy6P5eNa2BOC3ENCk3U4zd2tF4WDszZ9aqo1CiCcVishUe4dxemm8Hk_j0q1s3GSGAoRKRlDAA4YxwUWtZiBsHwpXE0aaFpSG2ivqBA0oHlOpv9MIJMfNGiTp8DI6ERvoc-5nevGeVskXTWmcFX6-mWrt");'>
+<div class="absolute top-4 left-4 bg-primary/20 backdrop-blur-sm border border-primary/30 px-3 py-1 rounded-full">
+<span class="text-primary text-xs font-bold uppercase tracking-wider">Stryde Insight</span>
+</div>
+</div>
+<div class="flex w-full flex-col items-stretch justify-center gap-2 p-5">
+<p class="text-white text-xl font-bold leading-tight tracking-tight">Smart Goal Recommendation</p>
+<p class="text-[#9db9a8] text-sm font-normal leading-relaxed">
+                        Based on your last 7 days of activity and heart rate recovery, we recommend increasing your target to 8,500 steps to optimize cardiovascular efficiency without overtraining.
+                    </p>
+<div class="mt-4 flex items-center justify-between gap-4">
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full border-2 border-surface-dark bg-primary flex items-center justify-center text-[10px] text-black font-bold">AI</div>
+</div>
+<button class="flex-1 flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-11 px-4 bg-primary text-background-dark text-sm font-bold transition-transform active:scale-95 shadow-lg shadow-primary/20">
+<span class="truncate">Apply This Goal</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Daily Targets (TextFields) -->
+<section>
+<h3 class="text-white text-lg font-bold leading-tight tracking-[-0.015em] pb-4">Daily Targets</h3>
+<div class="space-y-4">
+<!-- Steps Target -->
+<div class="flex flex-col">
+<label class="flex flex-col w-full">
+<p class="text-[#9db9a8] text-xs font-semibold uppercase tracking-widest pb-2">Daily Step Goal</p>
+<div class="flex w-full items-stretch rounded-xl">
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-border-dark bg-surface-dark focus:border-primary h-14 placeholder:text-[#9db9a8]/50 p-4 rounded-r-none border-r-0 text-lg font-medium" placeholder="Steps" type="number" value="10000"/>
+<div class="text-[#9db9a8] flex border border-border-dark bg-surface-dark items-center justify-center px-4 rounded-r-xl border-l-0">
+<span class="material-symbols-outlined text-primary">footprint</span>
+</div>
+</div>
+</label>
+</div>
+<!-- Distance Target -->
+<div class="flex flex-col">
+<label class="flex flex-col w-full">
+<p class="text-[#9db9a8] text-xs font-semibold uppercase tracking-widest pb-2">Distance (km)</p>
+<div class="flex w-full items-stretch rounded-xl">
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-border-dark bg-surface-dark focus:border-primary h-14 placeholder:text-[#9db9a8]/50 p-4 rounded-r-none border-r-0 text-lg font-medium" placeholder="KM" step="0.1" type="number" value="8.0"/>
+<div class="text-[#9db9a8] flex border border-border-dark bg-surface-dark items-center justify-center px-4 rounded-r-xl border-l-0">
+<span class="material-symbols-outlined text-primary">map</span>
+</div>
+</div>
+</label>
+</div>
+<!-- Hydration Target (Extra Component for Completeness) -->
+<div class="flex flex-col">
+<label class="flex flex-col w-full">
+<p class="text-[#9db9a8] text-xs font-semibold uppercase tracking-widest pb-2">Hydration (ml)</p>
+<div class="flex w-full items-stretch rounded-xl">
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-white focus:outline-0 focus:ring-2 focus:ring-primary/50 border border-border-dark bg-surface-dark focus:border-primary h-14 placeholder:text-[#9db9a8]/50 p-4 rounded-r-none border-r-0 text-lg font-medium" placeholder="ML" step="100" type="number" value="2500"/>
+<div class="text-[#9db9a8] flex border border-border-dark bg-surface-dark items-center justify-center px-4 rounded-r-xl border-l-0">
+<span class="material-symbols-outlined text-primary">water_drop</span>
+</div>
+</div>
+</label>
+</div>
+</div>
+</section>
+<!-- Active Reminders Section -->
+<section>
+<div class="flex items-center justify-between pb-4">
+<h3 class="text-white text-lg font-bold leading-tight tracking-[-0.015em]">Smart Reminders</h3>
+<span class="text-xs text-primary font-medium">Add New</span>
+</div>
+<div class="space-y-3">
+<!-- Reminder Item 1 -->
+<div class="bg-surface-dark p-4 rounded-xl border border-border-dark flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">notifications_active</span>
+</div>
+<div>
+<p class="text-white font-semibold text-base">Stay Active</p>
+<p class="text-[#9db9a8] text-xs">Mon - Fri, 09:00 - 18:00</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<!-- Reminder Item 2 -->
+<div class="bg-surface-dark p-4 rounded-xl border border-border-dark flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">local_drink</span>
+</div>
+<div>
+<p class="text-white font-semibold text-base">Hydration Alert</p>
+<p class="text-[#9db9a8] text-xs">Every 2 hours</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+<!-- Reminder Item 3 -->
+<div class="bg-surface-dark p-4 rounded-xl border border-border-dark flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">summarize</span>
+</div>
+<div>
+<p class="text-white font-semibold text-base">Daily Summary</p>
+<p class="text-[#9db9a8] text-xs">Every day at 21:00</p>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+</div>
+</div>
+<p class="text-[10px] text-[#9db9a8]/60 mt-4 text-center px-6">
+                All reminders are processed locally on your device to ensure maximum privacy and battery efficiency.
+            </p>
+</section>
+<!-- Save Button Container -->
+<div class="pt-6">
+<button class="w-full bg-primary hover:bg-primary/90 text-background-dark font-bold py-4 rounded-xl transition-all active:scale-95 shadow-xl shadow-primary/10">
+                Save All Changes
+            </button>
+</div>
+</main>
+<!-- Navigation Tab Bar (Simplified) -->
+<div class="fixed bottom-0 left-0 right-0 bg-background-dark/90 backdrop-blur-lg border-t border-border-dark p-2 flex justify-around items-center">
+<div class="flex flex-col items-center gap-1 text-[#9db9a8]">
+<span class="material-symbols-outlined">analytics</span>
+<span class="text-[10px]">Activity</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-primary">
+<span class="material-symbols-outlined">target</span>
+<span class="text-[10px]">Goals</span>
+</div>
+<div class="flex flex-col items-center gap-1 text-[#9db9a8]">
+<span class="material-symbols-outlined">person</span>
+<span class="text-[10px]">Profile</span>
+</div>
+</div>
+</body></html>

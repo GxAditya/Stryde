@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Stryde - Maps and Routes</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#13ec6d",
+                        "background-light": "#f6f8f7",
+                        "background-dark": "#102218",
+                    },
+                    fontFamily: {
+                        "display": ["Lexend"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Lexend', sans-serif;
+        }
+        .elevation-gradient {
+            background: linear-gradient(180deg, rgba(19, 236, 109, 0.3) 0%, rgba(19, 236, 109, 0) 100%);
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white min-h-screen flex flex-col">
+<!-- Top Navigation Bar -->
+<div class="sticky top-0 z-50 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-slate-200 dark:border-white/10">
+<div class="flex items-center px-4 py-3 justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-3xl">map</span>
+<h1 class="text-xl font-bold tracking-tight">Routes</h1>
+</div>
+<div class="flex gap-2">
+<button class="flex items-center justify-center size-10 rounded-full bg-slate-200 dark:bg-white/10 hover:bg-primary/20 transition-colors">
+<span class="material-symbols-outlined text-xl">layers</span>
+</button>
+<button class="flex items-center justify-center size-10 rounded-full bg-slate-200 dark:bg-white/10 hover:bg-primary/20 transition-colors">
+<span class="material-symbols-outlined text-xl">add_circle</span>
+</button>
+</div>
+</div>
+</div>
+<main class="flex-1 pb-48">
+<!-- Search Bar -->
+<div class="px-4 py-3">
+<label class="flex flex-col min-w-40 h-12 w-full">
+<div class="flex w-full flex-1 items-stretch rounded-xl h-full shadow-sm">
+<div class="text-slate-400 dark:text-[#9db9a8] flex border-none bg-white dark:bg-[#1c2720] items-center justify-center pl-4 rounded-l-xl border-r-0">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-r-xl text-slate-900 dark:text-white focus:outline-0 focus:ring-0 border-none bg-white dark:bg-[#1c2720] focus:border-none h-full placeholder:text-slate-400 dark:placeholder:text-[#9db9a8] px-4 pl-2 text-base font-normal leading-normal" placeholder="Search routes or areas" value=""/>
+</div>
+</label>
+</div>
+<!-- Filter Chips -->
+<div class="flex gap-3 px-4 py-2 overflow-x-auto no-scrollbar">
+<div class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary px-5 shadow-lg shadow-primary/20">
+<p class="text-background-dark text-sm font-semibold">All Routes</p>
+</div>
+<div class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1c2720] px-5 border border-slate-200 dark:border-white/5">
+<span class="material-symbols-outlined text-sm text-primary">download_done</span>
+<p class="text-slate-700 dark:text-white text-sm font-medium">Downloaded</p>
+</div>
+<div class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1c2720] px-5 border border-slate-200 dark:border-white/5">
+<p class="text-slate-700 dark:text-white text-sm font-medium">Hiking</p>
+</div>
+<div class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-[#1c2720] px-5 border border-slate-200 dark:border-white/5">
+<p class="text-slate-700 dark:text-white text-sm font-medium">Cycling</p>
+</div>
+</div>
+<!-- Section Header -->
+<div class="flex items-center justify-between px-4 mt-4">
+<h3 class="text-slate-900 dark:text-white text-lg font-bold">Saved Routes</h3>
+<button class="text-primary text-sm font-semibold">See all</button>
+</div>
+<!-- Route Cards List -->
+<div class="space-y-4 p-4">
+<!-- Card 1 -->
+<div class="flex items-stretch justify-between gap-4 rounded-xl bg-white dark:bg-[#1c2720] p-4 shadow-sm border border-slate-100 dark:border-white/5">
+<div class="flex flex-[2_2_0px] flex-col justify-between">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-1.5 text-primary text-[10px] font-bold uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs">cloud_done</span>
+                            Downloaded
+                        </div>
+<p class="text-slate-900 dark:text-white text-base font-bold leading-tight">Pine Ridge Loop</p>
+<p class="text-slate-500 dark:text-[#9db9a8] text-sm font-normal">12.4 km • 2h 15m • 420m gain</p>
+</div>
+<div class="mt-4 flex gap-2">
+<button class="flex items-center justify-center h-8 px-4 rounded-lg bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors">
+                            Details
+                        </button>
+<button class="flex items-center justify-center h-8 px-3 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-white/40">
+<span class="material-symbols-outlined text-sm">more_horiz</span>
+</button>
+</div>
+</div>
+<div class="w-32 h-32 bg-slate-100 dark:bg-black/20 bg-center bg-no-repeat bg-cover rounded-lg" data-alt="Satellite map view showing a green circular hiking path" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuApfSPt9FGVhGswEYdw6YZEWDhih3QKWG_xrpwRj76hE8RyqD7sQo2WFBXNedImklx_yedHg63DMVHTPgHFskFlaDnhDsRtjQtr0p1dtV_navRgPl4y9iwAWY7CHxNTZR3WR4SLCIxoNiYOirJ0J69WeVc7gbZQyqZhm68yZmYWBTTs3ugMRrL_mWOnwiVVgY346ID8nqkjrv03vkIXIfgn69x8aKVnlBtrgMYhrf6DoDdwoixICBCvhUV6ZJuhh-wXV2pcXrRubufZ");'>
+<!-- GPS Overlay Path (Simulated) -->
+<div class="w-full h-full flex items-center justify-center opacity-70">
+<svg class="w-20 h-20 text-primary" fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<path d="M20 50C20 30 40 10 60 20C80 30 90 60 70 80C50 100 10 70 20 50Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"></path>
+</svg>
+</div>
+</div>
+</div>
+<!-- Card 2 (Active Preview) -->
+<div class="flex items-stretch justify-between gap-4 rounded-xl bg-white dark:bg-[#1c2720] p-4 shadow-xl border-2 border-primary">
+<div class="flex flex-[2_2_0px] flex-col justify-between">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-1.5 text-primary text-[10px] font-bold uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs">offline_pin</span>
+                            Ready for Offline
+                        </div>
+<p class="text-slate-900 dark:text-white text-base font-bold leading-tight">Misty Mountain Trail</p>
+<p class="text-slate-500 dark:text-[#9db9a8] text-sm font-normal">8.2 km • 1h 45m • 850m gain</p>
+</div>
+<div class="mt-4 flex gap-2">
+<button class="flex items-center justify-center h-8 px-4 rounded-lg bg-primary text-background-dark text-xs font-bold shadow-lg shadow-primary/30">
+                            Selected
+                        </button>
+<button class="flex items-center justify-center h-8 px-3 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-white/40">
+<span class="material-symbols-outlined text-sm">star</span>
+</button>
+</div>
+</div>
+<div class="w-32 h-32 bg-slate-100 dark:bg-black/20 bg-center bg-no-repeat bg-cover rounded-lg" data-alt="Topographic map showing a zigzag mountain trail path" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBfBrm3HtQsU5LiHX6QorCh-aAEEfGvM9Li6o31WDGBlzriwbUz46KUk9a_VS6OHLceTLnGGCQGa_Fm2j6eACGWcIw_seZgD2nP6fmRrObNGBuGuW656fU5m1YHicF0Yn2rV4i5mz_J-E9Sn-fLUZUddXXQBP9RESLAEPDdT916Zi5iH1tqtcfmxWpqmWaJLO090iZfri69JauBXCle6oy-eTmwi4N4SydIv2mxVYyzTlBrmzy6pof0BlbVcfNnJ27edBP0buU18xBS");'>
+<div class="w-full h-full flex items-center justify-center opacity-70">
+<svg class="w-20 h-20 text-primary" fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<path d="M10 90L30 50L50 70L90 10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"></path>
+</svg>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="flex items-stretch justify-between gap-4 rounded-xl bg-white dark:bg-[#1c2720] p-4 shadow-sm border border-slate-100 dark:border-white/5">
+<div class="flex flex-[2_2_0px] flex-col justify-between">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-1.5 text-slate-400 dark:text-white/20 text-[10px] font-bold uppercase tracking-wider">
+<span class="material-symbols-outlined text-xs">cloud_off</span>
+                            Not Downloaded
+                        </div>
+<p class="text-slate-900 dark:text-white text-base font-bold leading-tight">Coastal Run Path</p>
+<p class="text-slate-500 dark:text-[#9db9a8] text-sm font-normal">5.0 km • 45m • 50m gain</p>
+</div>
+<div class="mt-4 flex gap-2">
+<button class="flex items-center justify-center h-8 px-4 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-900 dark:text-white text-xs font-bold">
+                            Details
+                        </button>
+<button class="flex items-center justify-center h-8 px-3 rounded-lg bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-white/40">
+<span class="material-symbols-outlined text-sm">download</span>
+</button>
+</div>
+</div>
+<div class="w-32 h-32 bg-slate-100 dark:bg-black/20 bg-center bg-no-repeat bg-cover rounded-lg" data-alt="Blue ocean coastline map with a straight running path" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBTghAYtEoZ_jHDtZx71PkCoolk6a1wWQ4VWz12C_RH7SMUXdc1bGEUVEpSXEx2En0cq9fLlEcHa59Fy0vVxq8JKy-Hw3QpguByfjjTailxBhwDPrPM2bJ-2c1wOYWjZMyGXszLgX8oE1v31c4GrsedGR3kW6VRkM5ugbC7epZv3KiQhfwMjrWluUyrOnaJssf2OijH1v9yDIZOsoVuE5ifrCAZ4upZUv24-8F1WYQnl5m-jFXDjW5M94vyquYm3KFRS-H8kOi14U4p");'>
+<div class="w-full h-full flex items-center justify-center opacity-70">
+<svg class="w-20 h-20 text-primary" fill="none" viewbox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<path d="M5 20C20 20 40 80 95 80" stroke="currentColor" stroke-linecap="round" stroke-width="4"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Selected Route Preview (Floating Panel) -->
+<div class="fixed bottom-0 left-0 right-0 z-50 p-4 pt-2">
+<div class="max-w-md mx-auto bg-white dark:bg-[#1c2720] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 ring-1 ring-black/5 overflow-hidden">
+<!-- Drag Handle -->
+<div class="flex justify-center pt-2 pb-1">
+<div class="w-10 h-1 rounded-full bg-slate-300 dark:bg-white/20"></div>
+</div>
+<div class="px-5 pb-5">
+<div class="flex items-center justify-between mb-4">
+<div>
+<h4 class="text-sm font-bold text-slate-500 dark:text-[#9db9a8] uppercase tracking-wide">Route Profile</h4>
+<p class="text-lg font-bold text-slate-900 dark:text-white">Misty Mountain Trail</p>
+</div>
+<div class="text-right">
+<p class="text-lg font-bold text-primary">+850m</p>
+<p class="text-xs text-slate-500 dark:text-[#9db9a8]">Elev. Gain</p>
+</div>
+</div>
+<!-- Elevation Profile Chart -->
+<div class="relative h-24 w-full bg-slate-50 dark:bg-black/20 rounded-lg overflow-hidden border border-slate-100 dark:border-white/5 mb-6">
+<svg class="w-full h-full" preserveaspectratio="none" viewbox="0 0 100 40">
+<path d="M0 40 L0 35 Q10 32 20 28 Q30 20 40 15 Q50 25 60 10 Q70 5 80 18 Q90 22 100 30 L100 40 Z" fill="url(#elevGradient)"></path>
+<path d="M0 35 Q10 32 20 28 Q30 20 40 15 Q50 25 60 10 Q70 5 80 18 Q90 22 100 30" fill="none" stroke="#13ec6d" stroke-width="1.5"></path>
+<defs>
+<lineargradient id="elevGradient" x1="0" x2="0" y1="0" y2="1">
+<stop offset="0%" stop-color="#13ec6d" stop-opacity="0.4"></stop>
+<stop offset="100%" stop-color="#13ec6d" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+</svg>
+<!-- Current Position Marker -->
+<div class="absolute top-1/2 left-[40%] size-3 rounded-full bg-primary border-2 border-white dark:border-background-dark shadow-md -translate-x-1/2 -translate-y-1/2"></div>
+</div>
+<!-- Action Buttons -->
+<div class="flex gap-3">
+<button class="flex-1 bg-primary text-background-dark font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined font-bold">play_arrow</span>
+                        Start Activity
+                    </button>
+<button class="bg-slate-100 dark:bg-white/5 p-3 rounded-xl flex items-center justify-center border border-slate-200 dark:border-white/5">
+<span class="material-symbols-outlined text-slate-600 dark:text-white">share</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Tab Bar Spacer (iOS style) -->
+<div class="h-8 bg-background-light dark:bg-background-dark"></div>
+</body></html>
