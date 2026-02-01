@@ -365,16 +365,6 @@ export default function ActivityScreen() {
       </View>
 
       {/* Confidence Chips Section */}
-      <View style={styles.chipsContainer}>
-        <View style={styles.chip}>
-          <MaterialIcons name="location-on" size={18} color={DesignTokens.primary} />
-          <Text style={styles.chipText}>GPS: HIGH CONFIDENCE</Text>
-        </View>
-        <View style={styles.chip}>
-          <MaterialIcons name="battery-std" size={18} color={DesignTokens.primary} />
-          <Text style={styles.chipText}>BATTERY: OPTIMAL</Text>
-        </View>
-      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Main Stats Dashboard */}

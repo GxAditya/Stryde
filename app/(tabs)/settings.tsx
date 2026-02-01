@@ -58,17 +58,14 @@ interface FormatOption {
 
 // Export options
 const EXPORT_OPTIONS: ExportOption[] = [
-  { id: 'activities', label: 'Activities', icon: 'walk', description: 'Activity history with routes' },
-  { id: 'goals', label: 'Goals', icon: 'trophy', description: 'Fitness goals and progress' },
-  { id: 'hydration', label: 'Hydration', icon: 'water', description: 'Hydration tracking logs' },
-  { id: 'profiles', label: 'Profiles', icon: 'person', description: 'Calibration profiles' },
+  { id: 'all', label: 'All Data', icon: 'layers', description: 'Complete history including activities, goals, and logs' },
+  { id: 'profiles', label: 'Calibration Data', icon: 'speedometer', description: 'Only step length calibration settings' },
 ];
 
 // Format options
 const FORMAT_OPTIONS: FormatOption[] = [
   { id: 'json', label: 'JSON', icon: 'code-slash', description: 'Complete data with all fields' },
   { id: 'csv', label: 'CSV', icon: 'grid', description: 'Spreadsheet-compatible format' },
-  { id: 'gpx', label: 'GPX', icon: 'map', description: 'Route export for fitness apps' },
 ];
 
 // Provider options
@@ -131,7 +128,7 @@ export default function SettingsScreen() {
 
     const result = await exportData(
       selectedFormat,
-      selectedDataTypes.includes('all') ? ['all'] : selectedDataTypes,
+      selectedDataTypes,
       (percent, message) => setProgress({ percent, message })
     );
 
@@ -247,21 +244,9 @@ ${result.errors.length > 0 ? `\nErrors: ${result.errors.length}` : ''}
     }
   };
 
-  // Toggle data type selection
+  // Toggle data type selection (Radio behavior)
   const toggleDataType = (type: DataType) => {
-    if (type === 'all') {
-      setSelectedDataTypes(['all']);
-      return;
-    }
-
-    setSelectedDataTypes((prev) => {
-      const withoutAll = prev.filter((t) => t !== 'all');
-      if (withoutAll.includes(type)) {
-        const filtered = withoutAll.filter((t) => t !== type);
-        return filtered.length === 0 ? ['all'] : filtered;
-      }
-      return [...withoutAll, type];
-    });
+    setSelectedDataTypes([type]);
   };
 
   // Update backup config (for future use)
@@ -300,7 +285,9 @@ ${result.errors.length > 0 ? `\nErrors: ${result.errors.length}` : ''}
 
   return (
     <ThemedView style={styles.container}>
-      <Stack.Screen options={{ title: 'Settings' }} />
+      <View style={styles.header}>
+        <ThemedText variant="h1" style={styles.headerTitle}>Settings</ThemedText>
+      </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         {/* Export Section */}
@@ -349,30 +336,6 @@ ${result.errors.length > 0 ? `\nErrors: ${result.errors.length}` : ''}
           {/* Data Type Selection */}
           <ThemedText style={styles.label}>Data to Export</ThemedText>
           <View style={styles.dataTypeContainer}>
-            <TouchableOpacity
-              style={[
-                styles.dataTypeChip,
-                selectedDataTypes.includes('all') && styles.dataTypeChipSelected,
-              ]}
-              onPress={() => toggleDataType('all')}>
-              <Ionicons
-                name="apps"
-                size={16}
-                color={
-                  selectedDataTypes.includes('all')
-                    ? DesignTokens.white
-                    : DesignTokens.textSecondary
-                }
-              />
-              <ThemedText
-                style={[
-                  styles.dataTypeChipText,
-                  selectedDataTypes.includes('all') && styles.dataTypeChipTextSelected,
-                ]}>
-                All Data
-              </ThemedText>
-            </TouchableOpacity>
-
             {EXPORT_OPTIONS.map((option) => (
               <TouchableOpacity
                 key={option.id}
@@ -595,6 +558,14 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 24,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
+  },
+  headerTitle: {
+    // fontSize and fontWeight handled by variant="h1"
   },
   sectionTitle: {
     fontSize: 20,

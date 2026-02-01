@@ -92,25 +92,15 @@ function WeeklyHydrationChart({ data }: { data: { day: string; amount: number }[
 // Quick log button component
 function QuickLogButton({
   amount,
-  label,
-  icon,
   onPress,
 }: {
   amount: number;
-  label: string;
-  icon: string;
   onPress: () => void;
 }) {
   return (
     <TouchableOpacity style={styles.quickLogButton} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.quickLogIconContainer}>
-        <Ionicons name={icon as any} size={28} color={DesignTokens.primary} />
-      </View>
-      <ThemedText variant="h2" style={styles.quickLogAmount}>
+      <ThemedText variant="bodyBold" style={styles.quickLogAmount}>
         {amount}ml
-      </ThemedText>
-      <ThemedText variant="caption" color="secondary">
-        {label}
       </ThemedText>
     </TouchableOpacity>
   );
@@ -413,21 +403,6 @@ export default function HydrationScreen() {
   const progressPercentage = getProgressPercentage();
   const remainingAmount = getRemainingAmount();
 
-  // Get icon for preset
-  const getPresetIcon = (amount: number): string => {
-    switch (amount) {
-      case 150:
-        return 'cafe';
-      case 250:
-        return 'glass-water';
-      case 500:
-        return 'water';
-      case 750:
-        return 'flask';
-      default:
-        return 'water';
-    }
-  };
 
   return (
     <ThemedView style={styles.container}>
@@ -478,8 +453,6 @@ export default function HydrationScreen() {
               <QuickLogButton
                 key={preset.amount}
                 amount={preset.amount}
-                label={preset.label}
-                icon={getPresetIcon(preset.amount)}
                 onPress={() => handleQuickLog(preset.amount)}
               />
             ))}
@@ -603,31 +576,21 @@ const styles = StyleSheet.create({
   },
   quickLogGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+    gap: 8,
     marginBottom: 16,
   },
   quickLogButton: {
     flex: 1,
-    minWidth: '22%',
     alignItems: 'center',
-    padding: 12,
-    backgroundColor: DesignTokens.background,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    backgroundColor: DesignTokens.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: DesignTokens.border,
   },
-  quickLogIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: `${DesignTokens.primary}15`,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   quickLogAmount: {
-    marginBottom: 2,
+    color: DesignTokens.primary,
   },
   customAmountButton: {
     marginTop: 8,

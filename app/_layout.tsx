@@ -60,6 +60,16 @@ export default function RootLayout() {
           <Stack.Screen name="hydration" options={{ headerShown: false }} />
           <Stack.Screen name="set-goal" options={{ headerShown: false }} />
           <Stack.Screen name="wrapup" options={{ headerShown: false }} />
+
+          {/* Activity Screens - No Header */}
+          <Stack.Screen name="walking" options={{ headerShown: false }} />
+          <Stack.Screen name="running" options={{ headerShown: false }} />
+          <Stack.Screen name="cycling" options={{ headerShown: false }} />
+          <Stack.Screen name="hiking" options={{ headerShown: false }} />
+          <Stack.Screen name="yoga" options={{ headerShown: false }} />
+          <Stack.Screen name="swimming" options={{ headerShown: false }} />
+          <Stack.Screen name="dance" options={{ headerShown: false }} />
+          <Stack.Screen name="strength-training" options={{ headerShown: false }} />
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>

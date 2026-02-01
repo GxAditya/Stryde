@@ -304,22 +304,6 @@ export default function ActivityScreen() {
     return () => clearInterval(interval);
   }, [status, updateDuration]);
 
-  // GPS-Based Step Calculation (Every 10s as requested)
-  useEffect(() => {
-    let stepInterval: ReturnType<typeof setInterval>;
-    if (status === 'active') {
-      stepInterval = setInterval(() => {
-        const activeProfile = getActiveProfile();
-        if (activeProfile && activeProfile.step_length_m > 0) {
-          const calculatedSteps = Math.floor(distance / activeProfile.step_length_m);
-          setStepCount(calculatedSteps);
-          // Persist using our new store action
-          updateSteps(calculatedSteps);
-        }
-      }, 10000); // 10 seconds
-    }
-    return () => clearInterval(stepInterval);
-  }, [status, distance, getActiveProfile, updateSteps]);
 
   // Removed unused sync effect
   /*
@@ -367,16 +351,6 @@ export default function ActivityScreen() {
       </View>
 
       {/* Confidence Chips Section */}
-      <View style={styles.chipsContainer}>
-        <View style={styles.chip}>
-          <MaterialIcons name="location-on" size={18} color={DesignTokens.primary} />
-          <Text style={styles.chipText}>GPS: HIGH CONFIDENCE</Text>
-        </View>
-        <View style={styles.chip}>
-          <MaterialIcons name="battery-std" size={18} color={DesignTokens.primary} />
-          <Text style={styles.chipText}>BATTERY: OPTIMAL</Text>
-        </View>
-      </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Main Stats Dashboard */}
@@ -398,14 +372,6 @@ export default function ActivityScreen() {
               <Text style={styles.statDelta}>+{(distance / 1000).toFixed(1)} km</Text>
             </View>
 
-            {/* Steps */}
-            <View style={[styles.statBox, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-              <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>STEPS</Text>
-              <View style={styles.statValueContainer}>
-                <Text style={[styles.statValue, { color: colors.text }]}>{stepCount.toLocaleString()}</Text>
-              </View>
-              <Text style={styles.statDelta}>+{stepCount > 0 ? stepCount : 0}</Text>
-            </View>
           </View>
         </View>
 
