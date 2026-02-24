@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
-import { ThemedText } from './themed-text';
 import { DesignTokens } from '@/constants/theme';
+import React, { useMemo } from 'react';
+import { StyleSheet, View, ViewStyle } from 'react-native';
+import { ThemedText } from './themed-text';
 
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
@@ -35,7 +35,7 @@ const LEVEL_CONFIG: Record<
   },
 };
 
-export function ConfidenceBadge({
+export const ConfidenceBadge = React.memo(function ConfidenceBadge({
   level,
   label,
   style,
@@ -43,26 +43,33 @@ export function ConfidenceBadge({
   const config = LEVEL_CONFIG[level];
   const displayLabel = label ?? config.defaultLabel;
 
+  const containerStyle = useMemo(
+    () => [
+      styles.container,
+      { backgroundColor: config.backgroundColor },
+      style,
+    ],
+    [config.backgroundColor, style]
+  );
+
+  const textStyle = useMemo(
+    () => [styles.text, { color: config.textColor }],
+    [config.textColor]
+  );
+
   return (
     <View
-      style={[
-        styles.container,
-        { backgroundColor: config.backgroundColor },
-        style,
-      ]}
+      style={containerStyle}
       accessible={true}
       accessibilityLabel={`Accuracy: ${displayLabel}`}
       accessibilityRole="text"
     >
-      <ThemedText
-        variant="caption"
-        style={[styles.text, { color: config.textColor }]}
-      >
+      <ThemedText variant="caption" style={textStyle}>
         {displayLabel}
       </ThemedText>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

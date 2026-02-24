@@ -1,14 +1,13 @@
-import React, { useRef, forwardRef } from 'react';
-import { StyleSheet, View, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import React, { forwardRef, memo, useCallback, useRef } from 'react';
+import { Dimensions, StyleSheet, View } from 'react-native';
+import { captureRef } from 'react-native-view-shot';
 
-import { ThemedView } from './themed-view';
-import { ThemedText } from './themed-text';
 import { DesignTokens } from '@/constants/theme';
+import { formatDistance, formatDuration, formatNumber } from '@/lib/statistics';
 import { WrapUpData } from '@/lib/wrapup';
-import { formatNumber, formatDistance, formatDuration } from '@/lib/statistics';
+import { ThemedText } from './themed-text';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 64;
@@ -33,16 +32,14 @@ export interface ShareCardRef {
   capture: () => Promise<string>;
 }
 
-export const ShareCard = forwardRef<ShareCardRef, ShareCardProps>(
+export const ShareCard = memo(forwardRef<ShareCardRef, ShareCardProps>(
   ({ wrapUpData }, ref) => {
     const cardRef = useRef<View>(null);
 
     const { stats, personality, year } = wrapUpData;
     const iconName = PERSONALITY_ICONS[personality.icon] || 'star';
 
-    // Expose capture methods via ref
-    React.useImperativeHandle(ref, () => ({
-      captureAndShare: async () => {
+    const captureAndShare = useCallback(async () => {
         if (!cardRef.current) return;
 
         try {
@@ -61,8 +58,9 @@ export const ShareCard = forwardRef<ShareCardRef, ShareCardProps>(
           console.error('Failed to capture and share:', error);
           throw error;
         }
-      },
-      capture: async () => {
+      }, [year]);
+
+      const capture = useCallback(async () => {
         if (!cardRef.current) throw new Error('Card ref not available');
 
         const uri = await captureRef(cardRef, {
@@ -72,7 +70,12 @@ export const ShareCard = forwardRef<ShareCardRef, ShareCardProps>(
         });
 
         return uri;
-      },
+      }, []);
+
+      // Expose capture methods via ref
+    React.useImperativeHandle(ref, () => ({
+      captureAndShare,
+      capture,
     }));
 
     return (
@@ -159,14 +162,14 @@ export const ShareCard = forwardRef<ShareCardRef, ShareCardProps>(
         </View>
 
         {/* Best Day Highlight */}
-        {stats.bestDay && (
+        {stats.bestDay ? (
           <View style={styles.highlightSection}>
             <Ionicons name="trophy" size={16} color={DesignTokens.accent} />
             <ThemedText variant="caption" style={styles.highlightText}>
               Best Day: {formatNumber(stats.bestDay.steps)} steps
             </ThemedText>
           </View>
-        )}
+        ) : null}
 
         {/* Footer */}
         <View style={styles.footer}>
@@ -198,11 +201,10 @@ export const ShareCard = forwardRef<ShareCardRef, ShareCardProps>(
         />
       </View>
     );
-  }
+  })
 );
 
 ShareCard.displayName = 'ShareCard';
-
 // Standalone share function for use outside the component
 export async function captureShareCard(
   cardRef: React.RefObject<View>

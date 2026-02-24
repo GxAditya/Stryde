@@ -1,20 +1,20 @@
-import React from 'react';
-import { View, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React, { memo } from 'react';
+import { Pressable, StyleSheet, View, ViewStyle } from 'react-native';
 
-import { ThemedText } from './themed-text';
-import { Card } from './card';
 import { DesignTokens } from '@/constants/theme';
 import {
-  WeatherForecast,
   DailyForecast,
+  formatTemperature,
   getActivitySuggestion,
+  getDayName,
   getRainAlert,
   getWeatherIoniconsName,
-  formatTemperature,
-  getDayName,
   isDaytime,
+  WeatherForecast,
 } from '@/lib/weather';
+import { Card } from './card';
+import { ThemedText } from './themed-text';
 
 interface WeatherCardProps {
   weather: WeatherForecast | null;
@@ -31,7 +31,7 @@ interface WeatherIconProps {
   isDay?: boolean;
 }
 
-function WeatherIcon({ type, size = 32, isDay = true }: WeatherIconProps) {
+const WeatherIcon = memo(function WeatherIcon({ type, size = 32, isDay = true }: WeatherIconProps) {
   const iconName = getWeatherIoniconsName(type as Parameters<typeof getWeatherIoniconsName>[0]);
   
   // Map to available Ionicons
@@ -73,14 +73,14 @@ function WeatherIcon({ type, size = 32, isDay = true }: WeatherIconProps) {
       color={getIconColor()} 
     />
   );
-}
+});
 
 interface MiniForecastItemProps {
   forecast: DailyForecast;
   index: number;
 }
 
-function MiniForecastItem({ forecast, index }: MiniForecastItemProps) {
+const MiniForecastItem = memo(function MiniForecastItem({ forecast, index }: MiniForecastItemProps) {
   const isToday = index === 0;
   
   return (
@@ -100,7 +100,7 @@ function MiniForecastItem({ forecast, index }: MiniForecastItemProps) {
       </ThemedText>
     </View>
   );
-}
+});
 
 export function WeatherCard({
   weather,
@@ -126,11 +126,16 @@ export function WeatherCard({
             Weather data unavailable
           </ThemedText>
           {onRefresh && (
-            <TouchableOpacity onPress={onRefresh} style={styles.refreshButton}>
+            <Pressable 
+              onPress={onRefresh} 
+              style={styles.refreshButton}
+              accessibilityLabel="Refresh weather data"
+              accessibilityRole="button"
+            >
               <ThemedText variant="caption" color="primary">
                 Try Again
               </ThemedText>
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
       </Card>
@@ -179,7 +184,12 @@ export function WeatherCard({
   if (compact) {
     const compactContainerStyle: ViewStyle = { ...styles.container, ...styles.compact };
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.8}>
+      <Pressable 
+        onPress={onPress} 
+        style={compactContainerStyle}
+        accessibilityLabel={`Weather for ${current.location.name}, ${formatTemperature(current.temperature)}, ${current.condition}`}
+        accessibilityRole="button"
+      >
         <Card style={compactContainerStyle}>
           <View style={styles.compactContent}>
             <View style={styles.compactMain}>
@@ -203,7 +213,7 @@ export function WeatherCard({
             )}
           </View>
         </Card>
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 
@@ -222,18 +232,21 @@ export function WeatherCard({
           </ThemedText>
         </View>
         {onRefresh && (
-          <TouchableOpacity 
+          <Pressable 
             onPress={onRefresh} 
             disabled={isLoading}
             style={styles.refreshButton}
+            accessibilityLabel="Refresh weather data"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isLoading }}
           >
             <Ionicons 
               name="refresh" 
               size={18} 
               color={isLoading ? DesignTokens.textSecondary : DesignTokens.primary}
-              style={isLoading && styles.rotating}
+              style={isLoading ? [styles.rotating, { transform: [{ rotate: '360deg' }] }] : undefined}
             />
-          </TouchableOpacity>
+          </Pressable>
         )}
       </View>
 

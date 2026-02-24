@@ -77,18 +77,16 @@ export default function ActivityScreen() {
     updateDuration,
     updateElevationGain,
     loadActiveActivity,
-    updateSteps,
   } = useActivityStore();
 
   const { getActiveProfile, loadProfiles } = useCalibrationStore();
   const { quickAdd } = useHydrationStore();
 
   // Local state
-  const [isPedometerAvailable, setIsPedometerAvailable] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [stepCount, setStepCount] = useState(0);
   const [distance, setDistance] = useState(0);
+  const [speed, setSpeed] = useState(0); // km/h
   const [elevationGain, setElevationGain] = useState(0);
   const [routePoints, setRoutePoints] = useState<RoutePoint[]>([]);
   const [lastLocation, setLastLocation] = useState<Location.LocationObject | null>(null);
@@ -96,19 +94,18 @@ export default function ActivityScreen() {
 
 
   // Refs for subscriptions and timing
-  const pedometerSubscription = useRef<PedometerSubscription>(null);
-  const accelerometerSubscription = useRef<AccelerometerSubscription>(null);
   const locationSubscription = useRef<LocationSubscription>(null);
   const startTimeRef = useRef<number>(0);
   const pausedTimeRef = useRef<number>(0);
-  const stepBuffer = useRef<number>(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
+  const statusRef = useRef<string>(status);
+  const lastLocationRef = useRef<Location.LocationObject | null>(null);
+  const totalDistanceRef = useRef<number>(0);
 
-  // Initialize network monitoring
+  // Keep statusRef in sync with status
   useEffect(() => {
-    return () => {
-    };
-  }, []);
+    statusRef.current = status;
+  }, [status]);
 
   // Handle app state changes
   const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
@@ -124,7 +121,6 @@ export default function ActivityScreen() {
   useEffect(() => {
     loadProfiles();
     loadActiveActivity();
-    Pedometer.isAvailableAsync().then(setIsPedometerAvailable);
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => {
       subscription.remove();
@@ -133,10 +129,6 @@ export default function ActivityScreen() {
   }, [handleAppStateChange, loadActiveActivity, loadProfiles]);
 
   const cleanupSubscriptions = () => {
-    pedometerSubscription.current?.remove();
-    pedometerSubscription.current = null;
-    accelerometerSubscription.current?.remove();
-    accelerometerSubscription.current = null;
     locationSubscription.current?.remove();
     locationSubscription.current = null;
   };
@@ -181,15 +173,12 @@ export default function ActivityScreen() {
       await startActivity(profileId);
       startTimeRef.current = Date.now();
       pausedTimeRef.current = 0;
-      stepBuffer.current = 0;
       setElapsedTime(0);
-      setStepCount(0);
       setDistance(0);
+      setSpeed(0);
       setElevationGain(0);
       setRoutePoints([]);
-      setRoutePoints([]);
-      // await startStepTracking(); // Removed Pedometer tracking
-      await startGPSTracking();
+      totalDistanceRef.current = 0;
       await startGPSTracking();
     } catch (err) {
       console.error('Failed to start activity:', err);
@@ -202,9 +191,26 @@ export default function ActivityScreen() {
   // const startStepTracking = ...
   // const startAccelerometerTracking = ...
 
+  // Calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance in meters
+  };
+
   const startGPSTracking = async () => {
     const initialLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
     setLastLocation(initialLocation);
+    lastLocationRef.current = initialLocation;
     const initialPoint: RoutePoint = {
       latitude: initialLocation.coords.latitude,
       longitude: initialLocation.coords.longitude,
@@ -215,10 +221,54 @@ export default function ActivityScreen() {
     await updateRoute(initialPoint);
 
     locationSubscription.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 5000, distanceInterval: 10 },
+      { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 3000, distanceInterval: 5 },
       async (location) => {
-        if (status !== 'active') return;
+        // Use ref to avoid stale closure
+        if (statusRef.current !== 'active') return;
+        
+        const prevLocation = lastLocationRef.current;
+        
+        // Calculate distance from previous point
+        if (prevLocation) {
+          const segmentDistance = calculateDistance(
+            prevLocation.coords.latitude,
+            prevLocation.coords.longitude,
+            location.coords.latitude,
+            location.coords.longitude
+          );
+          
+          // Only add distance if it's reasonable (filter out GPS noise)
+          if (segmentDistance > 2 && segmentDistance < 500) {
+            totalDistanceRef.current += segmentDistance;
+            setDistance(totalDistanceRef.current);
+            await updateDistance(totalDistanceRef.current);
+            
+            // Calculate speed (km/h) based on segment
+            const timeDiffMs = location.timestamp - prevLocation.timestamp;
+            if (timeDiffMs > 0) {
+              const timeDiffHours = timeDiffMs / (1000 * 60 * 60);
+              const segmentDistanceKm = segmentDistance / 1000;
+              const currentSpeed = segmentDistanceKm / timeDiffHours;
+              // Apply some smoothing - limit max speed to reasonable cycling speed
+              if (currentSpeed < 80) {
+                setSpeed(currentSpeed);
+              }
+            }
+          }
+          
+          // Calculate elevation gain
+          if (prevLocation.coords.altitude && location.coords.altitude) {
+            const elevationChange = location.coords.altitude - prevLocation.coords.altitude;
+            if (elevationChange > 0) {
+              setElevationGain((prev) => prev + elevationChange);
+            }
+          }
+        }
+        
+        // Update last location ref
+        lastLocationRef.current = location;
         setLastLocation(location);
+        
         const point: RoutePoint = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
@@ -227,12 +277,6 @@ export default function ActivityScreen() {
         };
         setRoutePoints((prev) => [...prev, point]);
         await updateRoute(point);
-        if (lastLocation?.coords.altitude && location.coords.altitude) {
-          const elevationChange = location.coords.altitude - lastLocation.coords.altitude;
-          if (elevationChange > 0) {
-            setElevationGain((prev) => prev + elevationChange);
-          }
-        }
       }
     );
   };
@@ -249,9 +293,10 @@ export default function ActivityScreen() {
     const pauseDuration = Date.now() - pausedTimeRef.current;
     startTimeRef.current += pauseDuration;
     resumeActivity();
-    resumeActivity();
-    // await startStepTracking(); // Removed
-    await startGPSTracking();
+    // Get fresh location for resume to avoid distance jump
+    const freshLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+    lastLocationRef.current = freshLocation;
+    setLastLocation(freshLocation);
     await startGPSTracking();
   };
 
@@ -273,8 +318,8 @@ export default function ActivityScreen() {
             cleanupSubscriptions();
             await endActivity();
             setElapsedTime(0);
-            setStepCount(0);
             setDistance(0);
+            setSpeed(0);
             setElevationGain(0);
             setRoutePoints([]);
             setLastLocation(null);
@@ -328,7 +373,6 @@ export default function ActivityScreen() {
 
   useEffect(() => {
     if (currentActivity) {
-      setStepCount(currentActivity.steps);
       setDistance(currentActivity.distance_m);
       setElapsedTime(currentActivity.duration_ms);
       setElevationGain(currentActivity.elevation_gain_m);
@@ -370,6 +414,16 @@ export default function ActivityScreen() {
                 <Text style={styles.statUnit}>km</Text>
               </View>
               <Text style={styles.statDelta}>+{(distance / 1000).toFixed(1)} km</Text>
+            </View>
+
+            {/* Speed */}
+            <View style={[styles.statBox, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
+              <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>SPEED</Text>
+              <View style={styles.statValueContainer}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{speed.toFixed(1)}</Text>
+                <Text style={styles.statUnit}>km/h</Text>
+              </View>
+              <Text style={styles.statDelta}>current</Text>
             </View>
 
           </View>

@@ -5,10 +5,10 @@
  * when the native module is not available (e.g., in Expo Go without prebuild).
  */
 
-import React from 'react';
-import { View, StyleSheet, Text } from 'react-native';
 import { DesignTokens } from '@/constants/theme';
 import { getIsMapAvailable } from '@/lib/maps';
+import React, { useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 // Type definitions for map props
 interface MapViewProps {
@@ -70,7 +70,7 @@ interface UrlTileProps {
 }
 
 // Fallback Map View when native module is not available
-const FallbackMapView: React.FC<MapViewProps> = ({ style, children }) => (
+const FallbackMapView: React.FC<MapViewProps> = React.memo(({ style, children }) => (
   <View style={[styles.fallbackContainer, style]}>
     <View style={styles.fallbackContent}>
       <Text style={styles.fallbackIcon}>🗺️</Text>
@@ -82,13 +82,15 @@ const FallbackMapView: React.FC<MapViewProps> = ({ style, children }) => (
     </View>
     {children}
   </View>
-);
+));
 
 // Fallback components
-const FallbackPolyline: React.FC<PolylineProps> = () => null;
-const FallbackMarker: React.FC<MarkerProps> = ({ children }) => <>{children}</>;
-const FallbackCircle: React.FC<CircleProps> = () => null;
-const FallbackUrlTile: React.FC<UrlTileProps> = () => null;
+const FallbackPolyline: React.FC<PolylineProps> = React.memo(() => null);
+const FallbackMarker: React.FC<MarkerProps> = React.memo(({ children }) => (
+  <>{children}</>
+));
+const FallbackCircle: React.FC<CircleProps> = React.memo(() => null);
+const FallbackUrlTile: React.FC<UrlTileProps> = React.memo(() => null);
 
 // Dynamic imports for react-native-maps components
 let MapViewComponent: React.FC<MapViewProps> = FallbackMapView;
@@ -110,40 +112,50 @@ try {
 }
 
 // Export the components
-export const MapView: React.FC<MapViewProps> = (props) => {
-  if (!getIsMapAvailable()) {
+export const MapView: React.FC<MapViewProps> = React.memo((props) => {
+  const isMapAvailable = useMemo(() => getIsMapAvailable(), []);
+  
+  if (!isMapAvailable) {
     return <FallbackMapView {...props} />;
   }
   return <MapViewComponent {...props} />;
-};
+});
 
-export const Polyline: React.FC<PolylineProps> = (props) => {
-  if (!getIsMapAvailable()) {
+export const Polyline: React.FC<PolylineProps> = React.memo((props) => {
+  const isMapAvailable = useMemo(() => getIsMapAvailable(), []);
+  
+  if (!isMapAvailable) {
     return <FallbackPolyline {...props} />;
   }
   return <PolylineComponent {...props} />;
-};
+});
 
-export const Marker: React.FC<MarkerProps> = (props) => {
-  if (!getIsMapAvailable()) {
+export const Marker: React.FC<MarkerProps> = React.memo((props) => {
+  const isMapAvailable = useMemo(() => getIsMapAvailable(), []);
+  
+  if (!isMapAvailable) {
     return <FallbackMarker {...props} />;
   }
   return <MarkerComponent {...props} />;
-};
+});
 
-export const Circle: React.FC<CircleProps> = (props) => {
-  if (!getIsMapAvailable()) {
+export const Circle: React.FC<CircleProps> = React.memo((props) => {
+  const isMapAvailable = useMemo(() => getIsMapAvailable(), []);
+  
+  if (!isMapAvailable) {
     return <FallbackCircle {...props} />;
   }
   return <CircleComponent {...props} />;
-};
+});
 
-export const UrlTile: React.FC<UrlTileProps> = (props) => {
-  if (!getIsMapAvailable()) {
+export const UrlTile: React.FC<UrlTileProps> = React.memo((props) => {
+  const isMapAvailable = useMemo(() => getIsMapAvailable(), []);
+  
+  if (!isMapAvailable) {
     return <FallbackUrlTile {...props} />;
   }
   return <UrlTileComponent {...props} />;
-};
+});
 
 const styles = StyleSheet.create({
   fallbackContainer: {

@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, ViewStyle, TouchableOpacity, GestureResponderEvent, AccessibilityProps } from 'react-native';
+import React, { memo, useCallback } from 'react';
+import { AccessibilityProps, GestureResponderEvent, Pressable, StyleSheet, ViewStyle } from 'react-native';
 import { ThemedView } from './themed-view';
 
 export interface CardProps extends AccessibilityProps {
@@ -15,7 +15,7 @@ export interface CardProps extends AccessibilityProps {
   accessibilityHint?: string;
 }
 
-export function Card({
+export const Card = memo(function Card({
   children,
   style,
   onPress,
@@ -24,6 +24,10 @@ export function Card({
   accessibilityRole,
   ...accessibilityProps
 }: CardProps) {
+  const handlePress = useCallback((event: GestureResponderEvent) => {
+    onPress?.(event);
+  }, [onPress]);
+
   const content = (
     <ThemedView variant="surface" style={[styles.container, style]}>
       {children}
@@ -32,21 +36,21 @@ export function Card({
 
   if (onPress) {
     return (
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.8}
+      <Pressable
+        onPress={handlePress}
+        android_ripple={{ color: 'rgba(0, 0, 0, 0.1)' }}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
         accessibilityRole={accessibilityRole ?? 'button'}
         {...accessibilityProps}
       >
         {content}
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 
   return content;
-}
+});
 
 const styles = StyleSheet.create({
   container: {

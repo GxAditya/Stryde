@@ -1,5 +1,5 @@
-import { PropsWithChildren, useState } from 'react';
-import { StyleSheet, TouchableOpacity } from 'react-native';
+import { memo, PropsWithChildren, useCallback, useState } from 'react';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -7,30 +7,35 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export function Collapsible({ children, title }: PropsWithChildren & { title: string }) {
+export const Collapsible = memo(function Collapsible({ children, title }: PropsWithChildren & { title: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const theme = useColorScheme() ?? 'light';
 
+  const toggleOpen = useCallback(() => {
+    setIsOpen((value) => !value);
+  }, []);
+
   return (
     <ThemedView>
-      <TouchableOpacity
+      <Pressable
         style={styles.heading}
-        onPress={() => setIsOpen((value) => !value)}
-        activeOpacity={0.8}>
+        onPress={toggleOpen}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isOpen }}>
         <IconSymbol
           name="chevron.right"
           size={18}
           weight="medium"
           color={theme === 'light' ? Colors.light.icon : Colors.dark.icon}
-          style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}
+          style={isOpen ? styles.iconRotated : styles.iconDefault}
         />
 
         <ThemedText type="defaultSemiBold">{title}</ThemedText>
-      </TouchableOpacity>
-      {isOpen && <ThemedView style={styles.content}>{children}</ThemedView>}
+      </Pressable>
+      {isOpen ? <ThemedView style={styles.content}>{children}</ThemedView> : null}
     </ThemedView>
   );
-}
+});
 
 const styles = StyleSheet.create({
   heading: {
@@ -41,5 +46,11 @@ const styles = StyleSheet.create({
   content: {
     marginTop: 6,
     marginLeft: 24,
+  },
+  iconDefault: {
+    transform: [{ rotate: '0deg' }],
+  },
+  iconRotated: {
+    transform: [{ rotate: '90deg' }],
   },
 });

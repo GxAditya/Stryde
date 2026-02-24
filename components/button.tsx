@@ -1,15 +1,15 @@
-import React from 'react';
-import {
-  TouchableOpacity,
-  StyleSheet,
-  ViewStyle,
-  TextStyle,
-  GestureResponderEvent,
-  AccessibilityProps,
-} from 'react-native';
-import * as Haptics from 'expo-haptics';
-import { ThemedText } from './themed-text';
 import { DesignTokens } from '@/constants/theme';
+import * as Haptics from 'expo-haptics';
+import React, { useCallback } from 'react';
+import {
+  AccessibilityProps,
+  GestureResponderEvent,
+  Pressable,
+  StyleSheet,
+  TextStyle,
+  ViewStyle,
+} from 'react-native';
+import { ThemedText } from './themed-text';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
@@ -47,7 +47,7 @@ const VARIANT_CONFIG: Record<
   },
 };
 
-export function Button({
+export const Button = React.memo(function Button({
   variant = 'primary',
   title,
   onPress,
@@ -62,26 +62,28 @@ export function Button({
 }: ButtonProps) {
   const config = VARIANT_CONFIG[variant];
 
-  const handlePress = (event: GestureResponderEvent) => {
-    // Provide haptic feedback on press
-    if (!disabled) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    onPress?.(event);
-  };
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      // Provide haptic feedback on press
+      if (!disabled) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      onPress?.(event);
+    },
+    [disabled, onPress]
+  );
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={handlePress}
       disabled={disabled}
-      activeOpacity={0.8}
-      style={[
+      style={({ pressed }) => [
         styles.container,
         {
           backgroundColor: config.backgroundColor,
           borderColor: config.borderColor,
           borderWidth: config.borderColor ? 1 : 0,
-          opacity: disabled ? 0.5 : 1,
+          opacity: disabled ? 0.5 : pressed ? 0.8 : 1,
         },
         style,
       ]}
@@ -97,9 +99,9 @@ export function Button({
       >
         {title}
       </ThemedText>
-    </TouchableOpacity>
+    </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

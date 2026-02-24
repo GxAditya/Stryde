@@ -1,7 +1,15 @@
 import { SymbolView, SymbolViewProps, SymbolWeight } from 'expo-symbols';
-import { StyleProp, ViewStyle } from 'react-native';
+import React from 'react';
+import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
 
-export function IconSymbol({
+const styles = StyleSheet.create({
+  icon: {
+    width: 24,
+    height: 24,
+  },
+});
+
+export const IconSymbol = React.memo(function IconSymbol({
   name,
   size = 24,
   color,
@@ -21,6 +29,7 @@ export function IconSymbol({
       resizeMode="scaleAspectFit"
       name={name}
       style={[
+        styles.icon,
         {
           width: size,
           height: size,
@@ -29,4 +38,4 @@ export function IconSymbol({
       ]}
     />
   );
-}
+});

@@ -5,12 +5,12 @@
  * Implements accessibility features for screen reader support.
  */
 
+import { DesignTokens } from '@/constants/theme';
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { Button } from './button';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
-import { Button } from './button';
-import { DesignTokens } from '@/constants/theme';
 
 interface Props {
   children: ReactNode;
@@ -105,37 +105,39 @@ export class ErrorBoundary extends Component<Props, State> {
               We&apos;re sorry, but something unexpected happened. Please try again or contact support if the problem persists.
             </ThemedText>
 
-            {__DEV__ && this.state.error && (
-              <View
-                style={styles.errorDetails}
-                accessible={true}
-                accessibilityLabel="Error details for debugging"
-              >
-                <ThemedText
-                  variant="bodyBold"
-                  color="secondary"
-                  style={styles.errorTitle}
+            {__DEV__ ? (
+              this.state.error ? (
+                <View
+                  style={styles.errorDetails}
+                  accessible={true}
+                  accessibilityLabel="Error details for debugging"
                 >
-                  Error Details (Development Only):
-                </ThemedText>
-                <ThemedText
-                  variant="caption"
-                  color="secondary"
-                  style={styles.errorMessage}
-                >
-                  {this.state.error.toString()}
-                </ThemedText>
-                {this.state.errorInfo && (
                   <ThemedText
-                    variant="micro"
+                    variant="bodyBold"
                     color="secondary"
-                    style={styles.stackTrace}
+                    style={styles.errorTitle}
                   >
-                    {this.state.errorInfo.componentStack}
+                    Error Details (Development Only):
                   </ThemedText>
-                )}
-              </View>
-            )}
+                  <ThemedText
+                    variant="caption"
+                    color="secondary"
+                    style={styles.errorMessage}
+                  >
+                    {this.state.error.toString()}
+                  </ThemedText>
+                  {this.state.errorInfo ? (
+                    <ThemedText
+                      variant="micro"
+                      color="secondary"
+                      style={styles.stackTrace}
+                    >
+                      {this.state.errorInfo.componentStack}
+                    </ThemedText>
+                  ) : null}
+                </View>
+              ) : null
+            ) : null}
 
             <View style={styles.buttonContainer}>
               <Button

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Pressable, Dimensions, Alert, Platform } from 'react-native';
+import { StyleSheet, Text, View, Pressable, Dimensions, Alert, Platform, TextInput, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Pedometer, Accelerometer } from 'expo-sensors';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,19 +26,17 @@ export default function CalibrationScreen() {
     // State
     const [isCalibrating, setIsCalibrating] = useState(false);
     const [targetSteps, setTargetSteps] = useState(20);
-    const [stepCount, setStepCount] = useState(0);
+    const [manualStepInput, setManualStepInput] = useState('');
+    const [showStepInput, setShowStepInput] = useState(false);
     const [distance, setDistance] = useState(0); // in meters
     const [activityType, setActivityType] = useState<'walking' | 'running'>('walking');
     const [gpsStrength, setGpsStrength] = useState<'Weak' | 'Fair' | 'Strong'>('Weak');
-    const [isAccelerometerActive, setIsAccelerometerActive] = useState(false);
+    const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
 
     // Refs
-    const pedometerSubscription = useRef<Pedometer.Subscription | null>(null);
-    const accelerometerSubscription = useRef<{ remove: () => void } | null>(null);
     const locationSubscription = useRef<Location.LocationSubscription | null>(null);
     const lastLocation = useRef<Location.LocationObject | null>(null);
-    const initialLocation = useRef<Location.LocationObject | null>(null);
-    const stepBuffer = useRef(0);
+    const totalDistanceRef = useRef(0);
 
     // Initial permission check and GPS warm-up
     useEffect(() => {
@@ -57,6 +54,7 @@ export default function CalibrationScreen() {
                 { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1 },
                 (location) => {
                     if (location.coords.accuracy) {
+                        setGpsAccuracy(location.coords.accuracy);
                         if (location.coords.accuracy < 10) setGpsStrength('Strong');
                         else if (location.coords.accuracy < 20) setGpsStrength('Fair');
                         else setGpsStrength('Weak');
@@ -73,94 +71,62 @@ export default function CalibrationScreen() {
             // Check Location Permission (Required)
             const { status: locationStatus } = await Location.requestForegroundPermissionsAsync();
             if (locationStatus !== 'granted') {
-                Alert.alert('Permission Required', 'Location permission is strictly needed to measure distance.');
+                Alert.alert('Permission Required', 'Location permission is needed to measure distance.');
                 return;
             }
 
-            // Check Pedometer Availability & Permission
-            const isPedometerAvailable = await Pedometer.isAvailableAsync();
-            if (isPedometerAvailable) {
-                const { status: pedometerStatus } = await Pedometer.requestPermissionsAsync();
-                if (pedometerStatus !== 'granted') {
-                    Alert.alert(
-                        'Pedometer Permission',
-                        'Pedometer permission was denied. We will attempt to use the accelerometer to count steps, but it may be less accurate.',
-                        [{ text: 'OK' }]
-                    );
-                }
+            // Check GPS strength before starting
+            if (gpsStrength === 'Weak') {
+                Alert.alert(
+                    'Weak GPS Signal',
+                    'GPS signal is weak. For accurate calibration, please move to an open area with clear sky view.',
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Start Anyway', onPress: () => beginCalibration() }
+                    ]
+                );
+                return;
             }
 
-            setIsCalibrating(true);
-            setStepCount(0);
-            setDistance(0);
-            stepBuffer.current = 0;
-
-            // Get initial fix
-            const startLoc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
-            initialLocation.current = startLoc;
-            lastLocation.current = startLoc;
-
-            // Start Sensors
-            startStepTracking();
-            startDistanceTracking();
-
+            beginCalibration();
         } catch (err) {
             console.error('Failed to start calibration:', err);
             setIsCalibrating(false);
         }
     };
 
-    const startStepTracking = async () => {
-        const available = await Pedometer.isAvailableAsync();
-        let canUsePedometer = available;
+    const beginCalibration = async () => {
+        setIsCalibrating(true);
+        setDistance(0);
+        totalDistanceRef.current = 0;
+        setManualStepInput('');
+        setShowStepInput(false);
 
-        if (available) {
-            const { status } = await Pedometer.getPermissionsAsync();
-            if (status !== 'granted') {
-                canUsePedometer = false;
-            }
-        }
+        // Get initial fix
+        const startLoc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+        lastLocation.current = startLoc;
 
-        if (canUsePedometer) {
-            setIsAccelerometerActive(false);
-            pedometerSubscription.current = Pedometer.watchStepCount(result => {
-                const newSteps = result.steps - stepBuffer.current;
-                if (stepBuffer.current === 0) {
-                    stepBuffer.current = result.steps; // Initialize buffer
-                } else if (newSteps > 0) {
-                    incrementSteps(newSteps);
-                }
-            });
-        } else {
-            // Fallback to Accelerometer
-            setIsAccelerometerActive(true);
-            Accelerometer.setUpdateInterval(100);
-            let lastAcc = 0;
-            let lastStepTime = 0;
-            accelerometerSubscription.current = Accelerometer.addListener(({ x, y, z }) => {
-                const acc = Math.sqrt(x * x + y * y + z * z);
-                const now = Date.now();
-                if (acc > 1.2 && now - lastStepTime > 300) {
-                    if (acc < lastAcc) {
-                        incrementSteps(1);
-                        lastStepTime = now;
-                    }
-                }
-                lastAcc = acc;
-            });
-        }
+        // Start GPS distance tracking
+        startDistanceTracking();
+        
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     };
 
-    const incrementSteps = (count: number) => {
-        setStepCount(prev => prev + count);
-    };
+    // Calculate distance between two GPS points using Haversine formula
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+        const R = 6371e3; // Earth's radius in meters
+        const φ1 = lat1 * Math.PI / 180;
+        const φ2 = lat2 * Math.PI / 180;
+        const Δφ = (lat2 - lat1) * Math.PI / 180;
+        const Δλ = (lon2 - lon1) * Math.PI / 180;
 
-    // Use useEffect to trigger completion to avoid state update loops and ensure Alert visibility
-    useEffect(() => {
-        if (isCalibrating && stepCount >= targetSteps) {
-            completeCalibration(targetSteps);
-        }
-    }, [stepCount, targetSteps, isCalibrating]);
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c; // Distance in meters
+    };
 
 
     const startDistanceTracking = async () => {
@@ -169,100 +135,135 @@ export default function CalibrationScreen() {
         locationSubscription.current = await Location.watchPositionAsync(
             { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 1 },
             (location) => {
+                // Update GPS strength
+                if (location.coords.accuracy) {
+                    setGpsAccuracy(location.coords.accuracy);
+                    if (location.coords.accuracy < 10) setGpsStrength('Strong');
+                    else if (location.coords.accuracy < 20) setGpsStrength('Fair');
+                    else setGpsStrength('Weak');
+                }
+
                 if (!lastLocation.current) {
                     lastLocation.current = location;
                     return;
                 }
 
-                // Calculate distance between points
-                // Simple haversine or imported util could work, but for now we use a rough approximation or a proper helper if available
-                // Since we don't have a helper imported, let's look at available imports.
-                // We can use a simple Euclidean approximation for short distances or Haversine.
-                // Actually, simply adding distance from location updates is what we want.
+                const d = calculateDistance(
+                    lastLocation.current.coords.latitude,
+                    lastLocation.current.coords.longitude,
+                    location.coords.latitude,
+                    location.coords.longitude
+                );
 
-                // However, expo-location doesn't give distanceBetween directly.
-                // We will accumulate distance manually.
-                // Calculating roughly:
-                const lat1 = lastLocation.current.coords.latitude;
-                const lon1 = lastLocation.current.coords.longitude;
-                const lat2 = location.coords.latitude;
-                const lon2 = location.coords.longitude;
-
-                const R = 6371e3; // metres
-                const φ1 = lat1 * Math.PI / 180;
-                const φ2 = lat2 * Math.PI / 180;
-                const Δφ = (lat2 - lat1) * Math.PI / 180;
-                const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-                const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                    Math.cos(φ1) * Math.cos(φ2) *
-                    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                const d = R * c; // in meters
-
-                setDistance(prev => prev + d);
+                // Filter out GPS noise - only add if movement is reasonable
+                // Minimum 0.5m to filter noise, maximum 5m to filter GPS jumps
+                if (d > 0.5 && d < 5) {
+                    totalDistanceRef.current += d;
+                    setDistance(totalDistanceRef.current);
+                }
+                
                 lastLocation.current = location;
             }
         );
     };
 
+    const handleStopCalibration = () => {
+        // Stop tracking but keep the data
+        locationSubscription.current?.remove();
+        setIsCalibrating(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        
+        // Check if we have enough distance
+        if (distance < 5) {
+            Alert.alert(
+                'Not Enough Distance',
+                'Please walk at least 5 meters for accurate calibration.',
+                [{ text: 'OK', onPress: () => resetCalibration() }]
+            );
+            return;
+        }
+        
+        // Show step input
+        setManualStepInput(targetSteps.toString());
+        setShowStepInput(true);
+    };
+
+    const confirmStepCount = () => {
+        Keyboard.dismiss();
+        const steps = parseInt(manualStepInput, 10);
+        
+        if (isNaN(steps) || steps < 5) {
+            Alert.alert('Invalid Input', 'Please enter at least 5 steps.');
+            return;
+        }
+        
+        completeCalibration(steps);
+    };
+
     const completeCalibration = async (finalSteps: number) => {
-        stopCalibration();
+        setShowStepInput(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
         // Calculate stride length
         const measuredDistance = distance; // meters
         const strideLength = measuredDistance / finalSteps;
 
+        // Calculate confidence based on GPS accuracy and sample count
+        let confidence = 0.9;
+        if (gpsAccuracy && gpsAccuracy < 5) confidence = 0.98;
+        else if (gpsAccuracy && gpsAccuracy < 10) confidence = 0.95;
+        else if (gpsAccuracy && gpsAccuracy < 15) confidence = 0.85;
+        else confidence = 0.75;
+
         // Sanity check
-        if (strideLength < 0.2 || strideLength > 2.0) {
-            setTimeout(() => {
-                Alert.alert(
-                    "Calibration Failed",
-                    `Calculated stride length (${strideLength.toFixed(2)}m) seems invalid. Please try again on a clearer path.`
-                );
-            }, 500);
+        if (strideLength < 0.3 || strideLength > 1.5) {
+            Alert.alert(
+                "Calibration Issue",
+                `Calculated stride length (${strideLength.toFixed(2)}m) seems ${strideLength < 0.3 ? 'too short' : 'too long'}. \n\nTypical stride lengths:\n• Walking: 0.6m - 0.8m\n• Running: 0.8m - 1.2m\n\nPlease check your step count and try again.`,
+                [{ text: 'OK', onPress: () => resetCalibration() }]
+            );
             return;
         }
 
         // Ask for confirmation
-        setTimeout(() => {
-            Alert.alert(
-                "Calibration Finished",
-                `Distance: ${measuredDistance.toFixed(2)}m\nSteps: ${finalSteps}\n\nCalculated Stride: ${strideLength.toFixed(2)}m\n\nDo you want to save this profile?`,
-                [
-                    {
-                        text: "Discard",
-                        style: "cancel",
-                        onPress: () => {
-                            setStepCount(0);
-                            setDistance(0);
-                        }
-                    },
-                    {
-                        text: "Save",
-                        onPress: async () => {
-                            try {
-                                await createProfile({
-                                    step_length_m: strideLength,
-                                    activity_type: activityType,
-                                    confidence: 0.95
-                                });
-                                Alert.alert("Saved", "Your stride length has been updated!", [{ text: "OK", onPress: () => router.back() }]);
-                            } catch (err) {
-                                Alert.alert("Error", "Failed to save calibration profile.");
-                            }
+        Alert.alert(
+            "Calibration Complete",
+            `Distance walked: ${measuredDistance.toFixed(1)}m\nSteps counted: ${finalSteps}\n\nCalculated Stride: ${strideLength.toFixed(2)}m\nConfidence: ${(confidence * 100).toFixed(0)}%\n\nSave this profile?`,
+            [
+                {
+                    text: "Discard",
+                    style: "cancel",
+                    onPress: () => resetCalibration()
+                },
+                {
+                    text: "Save",
+                    onPress: async () => {
+                        try {
+                            await createProfile({
+                                step_length_m: strideLength,
+                                activity_type: activityType,
+                                confidence: confidence
+                            });
+                            Alert.alert("Saved", "Your stride length has been saved!", [{ text: "OK", onPress: () => router.back() }]);
+                        } catch (err) {
+                            Alert.alert("Error", "Failed to save calibration profile.");
                         }
                     }
-                ]
-            );
-        }, 500);
+                }
+            ]
+        );
+    };
+
+    const resetCalibration = () => {
+        setDistance(0);
+        totalDistanceRef.current = 0;
+        setManualStepInput('');
+        setShowStepInput(false);
     };
 
     const stopCalibration = () => {
         setIsCalibrating(false);
-        pedometerSubscription.current?.remove();
-        accelerometerSubscription.current?.remove();
+        setShowStepInput(false);
         locationSubscription.current?.remove();
     };
 
@@ -283,14 +284,22 @@ export default function CalibrationScreen() {
             </View>
 
             <View style={styles.content}>
-                {/* Progress Section Removed */}
+                {/* Instructions */}
+                {!isCalibrating && !showStepInput && (
+                    <View style={styles.instructionCard}>
+                        <MaterialIcons name="info-outline" size={20} color={DesignTokens.primary} />
+                        <Text style={[styles.instructionCardText, { color: colors.textSecondary }]}>
+                            Count your steps out loud while walking. The GPS will measure the distance. When done, enter your step count.
+                        </Text>
+                    </View>
+                )}
 
-                {/* Settings Section (New) */}
-                {!isCalibrating && (
+                {/* Settings Section */}
+                {!isCalibrating && !showStepInput && (
                     <View style={styles.settingsContainer}>
-                        {/* Step Count Selector */}
+                        {/* Target Step Count Info */}
                         <View style={styles.settingRow}>
-                            <Text style={[styles.settingLabel, { color: colors.textSecondary }]}>Target Steps</Text>
+                            <Text style={[styles.settingLabel, { color: colors.textSecondary }]}>Recommended Steps</Text>
                             <View style={styles.stepSelector}>
                                 <Pressable
                                     style={styles.stepBtn}
@@ -311,7 +320,7 @@ export default function CalibrationScreen() {
                 )}
 
                 {/* Activity Toggle */}
-                {!isCalibrating && (
+                {!isCalibrating && !showStepInput && (
                     <View style={styles.toggleContainer}>
                         <Pressable
                             style={[styles.toggleButton, activityType === 'walking' && styles.toggleButtonActive]}
@@ -328,72 +337,115 @@ export default function CalibrationScreen() {
                     </View>
                 )}
 
-                {/* Main Counter */}
-                <View style={styles.counterContainer}>
-                    <View style={styles.ringContainer}>
-                        <View style={[styles.ringOuter, isCalibrating && styles.ringPulse]} />
-                        <View style={styles.ringInner} />
-                        <View style={styles.countWrapper}>
-                            <Text style={[styles.countText, { color: colors.text }]}>
-                                {distance.toFixed(1)}
-                            </Text>
-                            <Text style={styles.countLabel}>METERS COVERED</Text>
+                {/* Step Input Section */}
+                {showStepInput && (
+                    <View style={styles.stepInputContainer}>
+                        <Text style={[styles.stepInputTitle, { color: colors.text }]}>How many steps did you take?</Text>
+                        <Text style={[styles.stepInputSubtitle, { color: colors.textSecondary }]}>
+                            Distance walked: {distance.toFixed(1)} meters
+                        </Text>
+                        <TextInput
+                            style={[styles.stepInput, { color: colors.text, borderColor: DesignTokens.primary }]}
+                            value={manualStepInput}
+                            onChangeText={setManualStepInput}
+                            keyboardType="number-pad"
+                            placeholder="Enter step count"
+                            placeholderTextColor={colors.textSecondary}
+                            autoFocus
+                        />
+                        <View style={styles.stepInputButtons}>
+                            <Pressable 
+                                style={[styles.stepInputBtn, styles.stepInputBtnSecondary]} 
+                                onPress={() => { setShowStepInput(false); resetCalibration(); }}
+                            >
+                                <Text style={styles.stepInputBtnTextSecondary}>Cancel</Text>
+                            </Pressable>
+                            <Pressable style={styles.stepInputBtn} onPress={confirmStepCount}>
+                                <Text style={styles.stepInputBtnText}>Calculate</Text>
+                            </Pressable>
                         </View>
                     </View>
+                )}
 
-                    {isCalibrating && (
-                        <Text style={styles.instructionText}>
-                            Maintain a steady pace on level ground for the most accurate results.
-                        </Text>
-                    )}
-                </View>
+                {/* Main Counter */}
+                {!showStepInput && (
+                    <View style={styles.counterContainer}>
+                        <View style={styles.ringContainer}>
+                            <View style={[styles.ringOuter, isCalibrating && styles.ringPulse]} />
+                            <View style={styles.ringInner} />
+                            <View style={styles.countWrapper}>
+                                <Text style={[styles.countText, { color: colors.text }]}>
+                                    {distance.toFixed(1)}
+                                </Text>
+                                <Text style={styles.countLabel}>METERS COVERED</Text>
+                            </View>
+                        </View>
+
+                        {isCalibrating && (
+                            <Text style={styles.instructionText}>
+                                Count your steps out loud!{"\n"}Walk at a steady pace on level ground.
+                            </Text>
+                        )}
+                        {!isCalibrating && !showStepInput && distance === 0 && (
+                            <Text style={styles.instructionText}>
+                                Press Start, then walk {targetSteps} steps while counting.
+                            </Text>
+                        )}
+                    </View>
+                )}
 
                 {/* Stats */}
-                <View style={styles.statsGrid}>
-                    <View style={[styles.statCard, { backgroundColor: isDark ? '#1c2720' : colors.white, borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.border }]}>
-                        <View style={styles.statHeader}>
-                            <MaterialIcons name="location-on" size={16} color={DesignTokens.primary} />
-                            <Text style={styles.statLabel}>GPS SIGNAL</Text>
+                {!showStepInput && (
+                    <View style={styles.statsGrid}>
+                        <View style={[styles.statCard, { backgroundColor: isDark ? '#1c2720' : colors.white, borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.border }]}>
+                            <View style={styles.statHeader}>
+                                <MaterialIcons name="location-on" size={16} color={DesignTokens.primary} />
+                                <Text style={styles.statLabel}>GPS SIGNAL</Text>
+                            </View>
+                            <Text style={[styles.statValue, { color: colors.text }]}>{gpsStrength}</Text>
+                            <View style={styles.statStatus}>
+                                <View style={[styles.statusDot, { backgroundColor: gpsStrength === 'Weak' ? DesignTokens.error : DesignTokens.primary }]} />
+                                <Text style={styles.statusText}>
+                                    {gpsAccuracy ? `±${gpsAccuracy.toFixed(0)}m` : 'Searching...'}
+                                </Text>
+                            </View>
                         </View>
-                        <Text style={[styles.statValue, { color: colors.text }]}>{gpsStrength}</Text>
-                        <View style={styles.statStatus}>
-                            <View style={[styles.statusDot, { backgroundColor: gpsStrength === 'Weak' ? DesignTokens.error : DesignTokens.primary }]} />
-                            <Text style={styles.statusText}>{gpsStrength === 'Strong' ? 'Excellent' : 'Searching...'}</Text>
-                        </View>
-                    </View>
 
-                    <View style={[styles.statCard, { backgroundColor: isDark ? '#1c2720' : colors.white, borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.border }]}>
-                        <View style={styles.statHeader}>
-                            <MaterialIcons name="sensors" size={16} color={DesignTokens.primary} />
-                            <Text style={styles.statLabel}>SENSORS</Text>
-                        </View>
-                        <Text style={[styles.statValue, { color: colors.text }]}>{isAccelerometerActive ? 'Accel' : 'Pedometer'}</Text>
-                        <View style={styles.statStatus}>
-                            <View style={[styles.statusDot, { backgroundColor: DesignTokens.primary }]} />
-                            <Text style={styles.statusText}>Active</Text>
+                        <View style={[styles.statCard, { backgroundColor: isDark ? '#1c2720' : colors.white, borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.border }]}>
+                            <View style={styles.statHeader}>
+                                <MaterialIcons name="straighten" size={16} color={DesignTokens.primary} />
+                                <Text style={styles.statLabel}>TARGET</Text>
+                            </View>
+                            <Text style={[styles.statValue, { color: colors.text }]}>{targetSteps}</Text>
+                            <View style={styles.statStatus}>
+                                <View style={[styles.statusDot, { backgroundColor: DesignTokens.primary }]} />
+                                <Text style={styles.statusText}>steps to count</Text>
+                            </View>
                         </View>
                     </View>
-                </View>
+                )}
 
                 {/* Footer */}
-                <View style={styles.footer}>
-                    {!isCalibrating ? (
-                        <Pressable style={styles.startBtn} onPress={startCalibration}>
-                            <MaterialIcons name="play-arrow" size={24} color={DesignTokens.background} />
-                            <Text style={styles.startBtnText}>Start Calibrating</Text>
-                        </Pressable>
-                    ) : (
-                        <Pressable style={[styles.startBtn, { backgroundColor: DesignTokens.error }]} onPress={() => completeCalibration(targetSteps)}>
-                            <MaterialIcons name="stop" size={24} color={DesignTokens.white} />
-                            <Text style={[styles.startBtnText, { color: DesignTokens.white }]}>Stop Calibration</Text>
-                        </Pressable>
-                    )}
+                {!showStepInput && (
+                    <View style={styles.footer}>
+                        {!isCalibrating ? (
+                            <Pressable style={styles.startBtn} onPress={startCalibration}>
+                                <MaterialIcons name="play-arrow" size={24} color={DesignTokens.background} />
+                                <Text style={styles.startBtnText}>Start Calibrating</Text>
+                            </Pressable>
+                        ) : (
+                            <Pressable style={[styles.startBtn, { backgroundColor: DesignTokens.error }]} onPress={handleStopCalibration}>
+                                <MaterialIcons name="stop" size={24} color={DesignTokens.white} />
+                                <Text style={[styles.startBtnText, { color: DesignTokens.white }]}>Done Walking</Text>
+                            </Pressable>
+                        )}
 
-                    <View style={styles.modeIndicator}>
-                        <MaterialIcons name="cloud-off" size={12} color={colors.textSecondary} />
-                        <Text style={[styles.modeText, { color: colors.textSecondary }]}>OFFLINE PRECISION MODE ACTIVE</Text>
+                        <View style={styles.modeIndicator}>
+                            <MaterialIcons name="gps-fixed" size={12} color={colors.textSecondary} />
+                            <Text style={[styles.modeText, { color: colors.textSecondary }]}>GPS-ONLY CALIBRATION</Text>
+                        </View>
                     </View>
-                </View>
+                )}
             </View>
         </SafeAreaView>
     );
@@ -646,5 +698,74 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: 'bold',
         letterSpacing: 1,
+    },
+    instructionCard: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
+        backgroundColor: 'rgba(19, 236, 109, 0.08)',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(19, 236, 109, 0.2)',
+    },
+    instructionCardText: {
+        flex: 1,
+        fontSize: 14,
+        lineHeight: 20,
+    },
+    stepInputContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+    },
+    stepInputTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    stepInputSubtitle: {
+        fontSize: 16,
+        textAlign: 'center',
+        marginBottom: 30,
+    },
+    stepInput: {
+        width: '100%',
+        height: 64,
+        borderWidth: 2,
+        borderRadius: 16,
+        fontSize: 32,
+        fontWeight: 'bold',
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    stepInputButtons: {
+        flexDirection: 'row',
+        gap: 16,
+        width: '100%',
+    },
+    stepInputBtn: {
+        flex: 1,
+        height: 56,
+        backgroundColor: DesignTokens.primary,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    stepInputBtnSecondary: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+    },
+    stepInputBtnText: {
+        color: DesignTokens.background,
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    stepInputBtnTextSecondary: {
+        color: '#9db9a8',
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

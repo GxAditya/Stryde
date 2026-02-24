@@ -1,7 +1,8 @@
+import React from 'react';
 import { StyleSheet, Text, type TextProps } from 'react-native';
 
-import { useThemeColor } from '@/hooks/use-theme-color';
 import { Typography } from '@/constants/theme';
+import { useThemeColor } from '@/hooks/use-theme-color';
 
 export type ThemedTextProps = TextProps & {
   lightColor?: string;
@@ -12,7 +13,24 @@ export type ThemedTextProps = TextProps & {
   type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
 };
 
-export function ThemedText({
+// Helper to map legacy 'type' prop to new 'variant' prop
+function typeToVariant(type?: ThemedTextProps['type']): ThemedTextProps['variant'] {
+  switch (type) {
+    case 'title':
+      return 'h1';
+    case 'subtitle':
+      return 'h2';
+    case 'defaultSemiBold':
+      return 'bodyBold';
+    case 'link':
+      return 'body';
+    case 'default':
+    default:
+      return 'body';
+  }
+}
+
+export const ThemedText = React.memo(function ThemedText({
   style,
   lightColor,
   darkColor,
@@ -39,24 +57,7 @@ export function ThemedText({
       {...rest}
     />
   );
-}
-
-// Helper to map legacy 'type' prop to new 'variant' prop
-function typeToVariant(type?: ThemedTextProps['type']): ThemedTextProps['variant'] {
-  switch (type) {
-    case 'title':
-      return 'h1';
-    case 'subtitle':
-      return 'h2';
-    case 'defaultSemiBold':
-      return 'bodyBold';
-    case 'link':
-      return 'body';
-    case 'default':
-    default:
-      return 'body';
-  }
-}
+});
 
 const styles = StyleSheet.create({
   display: {

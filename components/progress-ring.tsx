@@ -1,15 +1,15 @@
-import React, { useEffect } from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import { DesignTokens } from '@/constants/theme';
+import React, { useEffect, useMemo } from 'react';
+import { StyleSheet, View, ViewStyle } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedProps,
-  withTiming,
   Easing,
   interpolate,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
 } from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
 import { ThemedText } from './themed-text';
-import { DesignTokens } from '@/constants/theme';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -49,7 +49,7 @@ const SIZE_CONFIG = {
   },
 };
 
-export function ProgressRing({
+const ProgressRingComponent = ({
   progress,
   confidence = 0,
   size = 'large',
@@ -57,7 +57,7 @@ export function ProgressRing({
   displayValue,
   label,
   style,
-}: ProgressRingProps) {
+}: ProgressRingProps) => {
   const config = SIZE_CONFIG[size];
   const center = config.width / 2;
   const radius = (config.width - config.strokeWidth) / 2;
@@ -85,7 +85,7 @@ export function ProgressRing({
       progressValue.value = clampedProgress;
       confidenceValue.value = clampedConfidence;
     }
-  }, [clampedProgress, clampedConfidence, animated]);
+  }, [clampedProgress, clampedConfidence, animated, progressValue, confidenceValue]);
 
   // Animated props for progress arc
   const progressAnimatedProps = useAnimatedProps(() => {
@@ -114,9 +114,27 @@ export function ProgressRing({
   // Calculate display text
   const percentageText = displayValue ?? `${Math.round(clampedProgress * 100)}%`;
 
+  // Memoize the container style to avoid recalculation
+  const containerStyle = useMemo(
+    () => [styles.container, { width: config.width, height: config.height }, style],
+    [config.width, config.height, style]
+  );
+
+  // Memoize the SVG props
+  const svgProps = useMemo(
+    () => ({ width: config.width, height: config.height }),
+    [config.width, config.height]
+  );
+
+  // Memoize transform for both circles
+  const circleTransform = useMemo(
+    () => `rotate(-90, ${center}, ${center})`,
+    [center]
+  );
+
   return (
     <View
-      style={[styles.container, { width: config.width, height: config.height }, style]}
+      style={containerStyle}
       accessible={true}
       accessibilityLabel={`${label || 'Progress'}: ${percentageText}`}
       accessibilityRole="progressbar"
@@ -126,7 +144,7 @@ export function ProgressRing({
         now: Math.round(clampedProgress * 100),
       }}
     >
-      <Svg width={config.width} height={config.height} style={styles.svg}>
+      <Svg {...svgProps} style={styles.svg}>
         {/* Background track */}
         <Circle
           cx={center}
@@ -138,7 +156,7 @@ export function ProgressRing({
         />
 
         {/* Confidence ring (secondary) */}
-        {clampedConfidence > 0 && (
+        {clampedConfidence > 0 ? (
           <AnimatedCircle
             cx={center}
             cy={center}
@@ -150,10 +168,10 @@ export function ProgressRing({
             strokeDasharray={circumference}
             // @ts-ignore - animatedProps is valid for AnimatedCircle
             animatedProps={confidenceAnimatedProps}
-            transform={`rotate(-90, ${center}, ${center})`}
+            transform={circleTransform}
             opacity={0.5}
           />
-        )}
+        ) : null}
 
         {/* Progress arc (primary) */}
         <AnimatedCircle
@@ -167,7 +185,7 @@ export function ProgressRing({
           strokeDasharray={circumference}
           // @ts-ignore - animatedProps is valid for AnimatedCircle
           animatedProps={progressAnimatedProps}
-          transform={`rotate(-90, ${center}, ${center})`}
+          transform={circleTransform}
         />
       </Svg>
 
@@ -176,15 +194,18 @@ export function ProgressRing({
         <ThemedText variant={config.fontSize} color="primary">
           {percentageText}
         </ThemedText>
-        {label && (
+        {label ? (
           <ThemedText variant={config.labelSize} color="secondary">
             {label}
           </ThemedText>
-        )}
+        ) : null}
       </View>
     </View>
   );
-}
+};
+
+// Memoize the component to prevent unnecessary re-renders
+export const ProgressRing = React.memo(ProgressRingComponent);
 
 const styles = StyleSheet.create({
   container: {

@@ -103,12 +103,14 @@ export default function ActivityScreen() {
   const pausedTimeRef = useRef<number>(0);
   const stepBuffer = useRef<number>(0);
   const appState = useRef<AppStateStatus>(AppState.currentState);
+  const statusRef = useRef<string>(status);
+  const lastLocationRef = useRef<Location.LocationObject | null>(null);
+  const totalDistanceRef = useRef<number>(0);
 
-  // Initialize network monitoring
+  // Keep statusRef in sync with status
   useEffect(() => {
-    return () => {
-    };
-  }, []);
+    statusRef.current = status;
+  }, [status]);
 
   // Handle app state changes
   const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
@@ -187,9 +189,8 @@ export default function ActivityScreen() {
       setDistance(0);
       setElevationGain(0);
       setRoutePoints([]);
-      setRoutePoints([]);
+      totalDistanceRef.current = 0;
       // await startStepTracking(); // Removed Pedometer tracking
-      await startGPSTracking();
       await startGPSTracking();
     } catch (err) {
       console.error('Failed to start activity:', err);
@@ -202,9 +203,26 @@ export default function ActivityScreen() {
   // const startStepTracking = ...
   // const startAccelerometerTracking = ...
 
+  // Calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance in meters
+  };
+
   const startGPSTracking = async () => {
     const initialLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
     setLastLocation(initialLocation);
+    lastLocationRef.current = initialLocation;
     const initialPoint: RoutePoint = {
       latitude: initialLocation.coords.latitude,
       longitude: initialLocation.coords.longitude,
@@ -217,8 +235,40 @@ export default function ActivityScreen() {
     locationSubscription.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 5000, distanceInterval: 10 },
       async (location) => {
-        if (status !== 'active') return;
+        // Use ref to avoid stale closure
+        if (statusRef.current !== 'active') return;
+        
+        const prevLocation = lastLocationRef.current;
+        
+        // Calculate distance from previous point
+        if (prevLocation) {
+          const segmentDistance = calculateDistance(
+            prevLocation.coords.latitude,
+            prevLocation.coords.longitude,
+            location.coords.latitude,
+            location.coords.longitude
+          );
+          
+          // Only add distance if it's reasonable (filter out GPS noise)
+          if (segmentDistance > 1 && segmentDistance < 100) {
+            totalDistanceRef.current += segmentDistance;
+            setDistance(totalDistanceRef.current);
+            await updateDistance(totalDistanceRef.current);
+          }
+          
+          // Calculate elevation gain
+          if (prevLocation.coords.altitude && location.coords.altitude) {
+            const elevationChange = location.coords.altitude - prevLocation.coords.altitude;
+            if (elevationChange > 0) {
+              setElevationGain((prev) => prev + elevationChange);
+            }
+          }
+        }
+        
+        // Update last location ref
+        lastLocationRef.current = location;
         setLastLocation(location);
+        
         const point: RoutePoint = {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
@@ -227,12 +277,6 @@ export default function ActivityScreen() {
         };
         setRoutePoints((prev) => [...prev, point]);
         await updateRoute(point);
-        if (lastLocation?.coords.altitude && location.coords.altitude) {
-          const elevationChange = location.coords.altitude - lastLocation.coords.altitude;
-          if (elevationChange > 0) {
-            setElevationGain((prev) => prev + elevationChange);
-          }
-        }
       }
     );
   };
@@ -249,9 +293,10 @@ export default function ActivityScreen() {
     const pauseDuration = Date.now() - pausedTimeRef.current;
     startTimeRef.current += pauseDuration;
     resumeActivity();
-    resumeActivity();
-    // await startStepTracking(); // Removed
-    await startGPSTracking();
+    // Get fresh location for resume to avoid distance jump
+    const freshLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+    lastLocationRef.current = freshLocation;
+    setLastLocation(freshLocation);
     await startGPSTracking();
   };
 
