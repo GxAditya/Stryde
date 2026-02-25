@@ -1,41 +1,35 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
+import { router } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  StyleSheet,
-  View,
   Alert,
-  ScrollView,
   AppState,
   AppStateStatus,
-  TouchableOpacity,
   Dimensions,
-  ImageBackground,
-  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
   Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Pedometer, Accelerometer } from 'expo-sensors';
-import * as Location from 'expo-location';
-import * as Haptics from 'expo-haptics';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { Link, router } from 'expo-router';
 
 
 
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { Card } from '@/components/card';
-import { Button } from '@/components/button';
-import { useActivityStore } from '@/stores/activity-store';
-import { useCalibrationStore } from '@/stores/calibration-store';
-import { useHydrationStore } from '@/stores/hydration-store';
+import { ProgressRing } from '@/components/progress-ring';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RoutePoint } from '@/lib/db';
-import { showActivityHydrationReminder, scheduleTemperatureHydrationReminder } from '@/lib/notifications';
 import {
   NetworkStatus,
 } from '@/lib/maps';
-import {
-} from '@/lib/weather';
+import { } from '@/lib/weather';
+import { useActivityStore } from '@/stores/activity-store';
+import { useCalibrationStore } from '@/stores/calibration-store';
+import { useGoalStore } from '@/stores/goal-store';
+import { useHydrationStore } from '@/stores/hydration-store';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -77,14 +71,18 @@ export default function ActivityScreen() {
     updateDuration,
     updateElevationGain,
     loadActiveActivity,
+    updateSteps,
   } = useActivityStore();
 
   const { getActiveProfile, loadProfiles } = useCalibrationStore();
   const { quickAdd } = useHydrationStore();
+  const { getTodayGoals } = useGoalStore();
 
   // Local state
   const [isLoading, setIsLoading] = useState(false);
+  const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [stepCount, setStepCount] = useState(0);
   const [distance, setDistance] = useState(0);
   const [speed, setSpeed] = useState(0); // km/h
   const [elevationGain, setElevationGain] = useState(0);
@@ -102,6 +100,12 @@ export default function ActivityScreen() {
   const lastLocationRef = useRef<Location.LocationObject | null>(null);
   const totalDistanceRef = useRef<number>(0);
 
+  // Get today's distance goal
+  const todayGoals = getTodayGoals();
+  const distanceGoal = todayGoals.find(g => g.type === 'daily_distance')?.target || 5000; // default 5km in meters
+  const distanceGoalKm = distanceGoal / 1000; // convert to km
+  const distanceProgress = distanceGoal > 0 ? distance / distanceGoal : 0;
+
   // Keep statusRef in sync with status
   useEffect(() => {
     statusRef.current = status;
@@ -110,12 +114,12 @@ export default function ActivityScreen() {
   // Handle app state changes
   const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
     if (appState.current === 'active' && nextAppState === 'background') {
-      if (status === 'active') {
+      if (statusRef.current === 'active') {
         console.log('App going to background - activity continues');
       }
     }
     appState.current = nextAppState;
-  }, [status]);
+  }, []);
 
   // Load profiles and any active activity on mount
   useEffect(() => {
@@ -174,6 +178,7 @@ export default function ActivityScreen() {
       startTimeRef.current = Date.now();
       pausedTimeRef.current = 0;
       setElapsedTime(0);
+      setStepCount(0);
       setDistance(0);
       setSpeed(0);
       setElevationGain(0);
@@ -282,10 +287,12 @@ export default function ActivityScreen() {
   };
 
   const handlePause = () => {
+    console.log('[DEBUG] handlePause called, current status:', status);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     pauseActivity();
     pausedTimeRef.current = Date.now();
     cleanupSubscriptions();
+    console.log('[DEBUG] After pauseActivity, new status should be: paused');
   };
 
   const handleResume = async () => {
@@ -323,6 +330,7 @@ export default function ActivityScreen() {
             setElevationGain(0);
             setRoutePoints([]);
             setLastLocation(null);
+            setIsScreenLocked(false);
             startTimeRef.current = 0;
             pausedTimeRef.current = 0;
           } catch (_err) {
@@ -333,6 +341,12 @@ export default function ActivityScreen() {
         },
       },
     ]);
+  };
+
+  // Screen lock toggle function
+  const handleScreenLock = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsScreenLocked(!isScreenLocked);
   };
 
   useEffect(() => {
@@ -348,6 +362,23 @@ export default function ActivityScreen() {
     }
     return () => clearInterval(interval);
   }, [status, updateDuration]);
+
+  // GPS-Based Step Calculation (Every 10s as requested)
+  useEffect(() => {
+    let stepInterval: ReturnType<typeof setInterval>;
+    if (status === 'active') {
+      stepInterval = setInterval(() => {
+        const activeProfile = getActiveProfile();
+        if (activeProfile && activeProfile.step_length_m > 0) {
+          const calculatedSteps = Math.floor(distance / activeProfile.step_length_m);
+          setStepCount(calculatedSteps);
+          // Persist using our new store action
+          updateSteps(calculatedSteps);
+        }
+      }, 10000); // 10 seconds
+    }
+    return () => clearInterval(stepInterval);
+  }, [status, distance, getActiveProfile, updateSteps]);
 
 
   // Removed unused sync effect
@@ -373,6 +404,7 @@ export default function ActivityScreen() {
 
   useEffect(() => {
     if (currentActivity) {
+      setStepCount(currentActivity.steps);
       setDistance(currentActivity.distance_m);
       setElapsedTime(currentActivity.duration_ms);
       setElevationGain(currentActivity.elevation_gain_m);
@@ -389,9 +421,7 @@ export default function ActivityScreen() {
           <MaterialIcons name="arrow-back-ios" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Cycling</Text>
-        <TouchableOpacity style={[styles.lockButton, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]}>
-          <MaterialIcons name="lock-open" size={20} color={isDark ? '#94a3b8' : '#64748b'} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
 
       {/* Confidence Chips Section */}
@@ -399,24 +429,34 @@ export default function ActivityScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Main Stats Dashboard */}
         <View style={styles.dashboardContainer}>
-          {/* Elapsed Time - Primary Focus */}
-          <View style={[styles.timeCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-            <Text style={styles.timeLabel}>ELAPSED TIME</Text>
-            <Text style={styles.timeValue}>{formatDuration(elapsedTime)}</Text>
+          {/* Progress Ring Section */}
+          <View style={styles.progressRingContainer}>
+            <ProgressRing 
+              progress={distanceProgress} 
+              size="large"
+              displayValue={`${(distance / 1000).toFixed(1)} km`}
+            />
           </View>
 
-          <View style={styles.statsRow}>
-            {/* Distance */}
+          {/* Steps and Time Below */}
+          <View style={styles.statsBelowRing}>
             <View style={[styles.statBox, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-              <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>DISTANCE</Text>
+              <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>STEPS</Text>
               <View style={styles.statValueContainer}>
-                <Text style={[styles.statValue, { color: colors.text }]}>{(distance / 1000).toFixed(2)}</Text>
-                <Text style={styles.statUnit}>km</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{stepCount.toLocaleString()}</Text>
               </View>
-              <Text style={styles.statDelta}>+{(distance / 1000).toFixed(1)} km</Text>
             </View>
 
-            {/* Speed */}
+            <View style={[styles.statBox, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
+              <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>TIME</Text>
+              <View style={styles.statValueContainer}>
+                <Text style={[styles.statValue, { color: colors.text }]}>{formatDuration(elapsedTime)}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Speed - Below the stats */}
+          <View style={styles.speedRow}>
             <View style={[styles.statBox, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
               <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>SPEED</Text>
               <View style={styles.statValueContainer}>
@@ -425,7 +465,6 @@ export default function ActivityScreen() {
               </View>
               <Text style={styles.statDelta}>current</Text>
             </View>
-
           </View>
         </View>
 
@@ -444,10 +483,17 @@ export default function ActivityScreen() {
         </TouchableOpacity>
 
         {/* Play/Pause Button */}
-        <TouchableOpacity
+        <Pressable
           style={styles.playPauseButton}
-          onPress={status === 'active' ? handlePause : (status === 'paused' ? handleResume : handleStart)}
-          activeOpacity={0.8}
+          onPress={() => {
+            if (status === 'active') {
+              handlePause();
+            } else if (status === 'paused') {
+              handleResume();
+            } else {
+              handleStart();
+            }
+          }}
         >
           <MaterialIcons
             name={status === 'active' ? "pause" : "play-arrow"}
@@ -457,13 +503,31 @@ export default function ActivityScreen() {
           <Text style={styles.playPauseText}>
             {status === 'active' ? 'PAUSE' : (status === 'paused' ? 'RESUME' : 'START')}
           </Text>
-        </TouchableOpacity>
+        </Pressable>
 
-        {/* Lock Button (Placeholder for now) */}
-        <TouchableOpacity style={[styles.screenLockButton, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]}>
-          <MaterialIcons name="screen-lock-portrait" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+        {/* Lock Button - Toggle screen lock */}
+        <TouchableOpacity 
+          style={[styles.screenLockButton, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]}
+          onPress={handleScreenLock}
+        >
+          <MaterialIcons name={isScreenLocked ? 'lock' : 'screen-lock-portrait'} size={24} color={isDark ? '#94a3b8' : '#64748b'} />
         </TouchableOpacity>
       </View>
+
+      {/* Screen Lock Overlay - Pocket Mode */}
+      {isScreenLocked && (
+        <View style={styles.lockOverlay} pointerEvents="box-none">
+          <View style={styles.lockOverlayContent} pointerEvents="auto">
+            <TouchableOpacity 
+              style={styles.unlockButton}
+              onPress={handleScreenLock}
+            >
+              <MaterialIcons name="lock" size={48} color="#ffffff" />
+              <Text style={styles.unlockText}>Tap to Unlock</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
     </View>
   );
@@ -528,6 +592,19 @@ const styles = StyleSheet.create({
   },
   dashboardContainer: {
     paddingHorizontal: 16,
+    gap: 16,
+  },
+  progressRingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
+  statsBelowRing: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  speedRow: {
+    flexDirection: 'row',
     gap: 16,
   },
   timeCard: {
@@ -630,5 +707,33 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Screen Lock Overlay Styles
+  lockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  lockOverlayContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unlockButton: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  unlockText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
   },
 });

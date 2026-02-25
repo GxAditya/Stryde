@@ -9,6 +9,7 @@ import {
   AppState,
   AppStateStatus,
   Dimensions,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -78,6 +79,7 @@ export default function ActivityScreen() {
   // Local state
   const [isPedometerAvailable, setIsPedometerAvailable] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [stepCount, setStepCount] = useState(0);
   const [distance, setDistance] = useState(0);
@@ -112,12 +114,12 @@ export default function ActivityScreen() {
   // Handle app state changes
   const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
     if (appState.current === 'active' && nextAppState === 'background') {
-      if (status === 'active') {
+      if (statusRef.current === 'active') {
         console.log('App going to background - activity continues');
       }
     }
     appState.current = nextAppState;
-  }, [status]);
+  }, []);
 
   // Load profiles and any active activity on mount
   useEffect(() => {
@@ -279,10 +281,12 @@ export default function ActivityScreen() {
   };
 
   const handlePause = () => {
+    console.log('[DEBUG] handlePause called, current status:', status);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     pauseActivity();
     pausedTimeRef.current = Date.now();
     cleanupSubscriptions();
+    console.log('[DEBUG] After pauseActivity, new status should be: paused');
   };
 
   const handleResume = async () => {
@@ -320,6 +324,7 @@ export default function ActivityScreen() {
             setElevationGain(0);
             setRoutePoints([]);
             setLastLocation(null);
+            setIsScreenLocked(false);
             startTimeRef.current = 0;
             pausedTimeRef.current = 0;
           } catch (_err) {
@@ -330,6 +335,12 @@ export default function ActivityScreen() {
         },
       },
     ]);
+  };
+
+  // Screen lock toggle function
+  const handleScreenLock = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsScreenLocked(!isScreenLocked);
   };
 
   useEffect(() => {
@@ -402,9 +413,7 @@ export default function ActivityScreen() {
           <MaterialIcons name="arrow-back-ios" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Walking</Text>
-        <TouchableOpacity style={[styles.lockButton, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]}>
-          <MaterialIcons name="lock-open" size={20} color={isDark ? '#94a3b8' : '#64748b'} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
 
       {/* Confidence Chips Section */}
@@ -456,10 +465,17 @@ export default function ActivityScreen() {
         </TouchableOpacity>
 
         {/* Play/Pause Button */}
-        <TouchableOpacity
+        <Pressable
           style={styles.playPauseButton}
-          onPress={status === 'active' ? handlePause : (status === 'paused' ? handleResume : handleStart)}
-          activeOpacity={0.8}
+          onPress={() => {
+            if (status === 'active') {
+              handlePause();
+            } else if (status === 'paused') {
+              handleResume();
+            } else {
+              handleStart();
+            }
+          }}
         >
           <MaterialIcons
             name={status === 'active' ? "pause" : "play-arrow"}
@@ -469,13 +485,31 @@ export default function ActivityScreen() {
           <Text style={styles.playPauseText}>
             {status === 'active' ? 'PAUSE' : (status === 'paused' ? 'RESUME' : 'START')}
           </Text>
-        </TouchableOpacity>
+        </Pressable>
 
-        {/* Lock Button (Placeholder for now) */}
-        <TouchableOpacity style={[styles.screenLockButton, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]}>
-          <MaterialIcons name="screen-lock-portrait" size={24} color={isDark ? '#94a3b8' : '#64748b'} />
+        {/* Lock Button - Toggle screen lock */}
+        <TouchableOpacity 
+          style={[styles.screenLockButton, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]}
+          onPress={handleScreenLock}
+        >
+          <MaterialIcons name={isScreenLocked ? 'lock' : 'screen-lock-portrait'} size={24} color={isDark ? '#94a3b8' : '#64748b'} />
         </TouchableOpacity>
       </View>
+
+      {/* Screen Lock Overlay - Pocket Mode */}
+      {isScreenLocked && (
+        <View style={styles.lockOverlay} pointerEvents="box-none">
+          <View style={styles.lockOverlayContent} pointerEvents="auto">
+            <TouchableOpacity 
+              style={styles.unlockButton}
+              onPress={handleScreenLock}
+            >
+              <MaterialIcons name="lock" size={48} color="#ffffff" />
+              <Text style={styles.unlockText}>Tap to Unlock</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -682,5 +716,33 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(148, 163, 184, 0.1)',
     borderWidth: 1,
     borderColor: 'rgba(148, 163, 184, 0.2)',
+  },
+  // Screen Lock Overlay Styles
+  lockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  lockOverlayContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unlockButton: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  unlockText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
   },
 });
