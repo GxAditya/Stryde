@@ -1,40 +1,32 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
+import { router } from 'expo-router';
+import { Pedometer } from 'expo-sensors';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  StyleSheet,
-  View,
   Alert,
-  ScrollView,
   AppState,
   AppStateStatus,
-  TouchableOpacity,
   Dimensions,
-  ImageBackground,
-  Platform,
+  ScrollView,
+  StyleSheet,
   Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Pedometer, Accelerometer } from 'expo-sensors';
-import * as Location from 'expo-location';
-import * as Haptics from 'expo-haptics';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, router } from 'expo-router';
 
-
-
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { Card } from '@/components/card';
-import { Button } from '@/components/button';
-import { useActivityStore } from '@/stores/activity-store';
-import { useCalibrationStore } from '@/stores/calibration-store';
-import { useHydrationStore } from '@/stores/hydration-store';
+import { ProgressRing } from '@/components/progress-ring';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { RoutePoint } from '@/lib/db';
-import { showActivityHydrationReminder, scheduleTemperatureHydrationReminder } from '@/lib/notifications';
 import {
   NetworkStatus,
 } from '@/lib/maps';
+import { useActivityStore } from '@/stores/activity-store';
+import { useCalibrationStore } from '@/stores/calibration-store';
+import { useGoalStore } from '@/stores/goal-store';
+import { useHydrationStore } from '@/stores/hydration-store';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -81,6 +73,7 @@ export default function ActivityScreen() {
 
   const { getActiveProfile, loadProfiles } = useCalibrationStore();
   const { quickAdd } = useHydrationStore();
+  const { getTodayGoals } = useGoalStore();
 
   // Local state
   const [isPedometerAvailable, setIsPedometerAvailable] = useState<boolean | null>(null);
@@ -105,6 +98,11 @@ export default function ActivityScreen() {
   const statusRef = useRef<string>(status);
   const lastLocationRef = useRef<Location.LocationObject | null>(null);
   const totalDistanceRef = useRef<number>(0);
+
+  // Get today's step goal
+  const todayGoals = getTodayGoals();
+  const stepGoal = todayGoals.find(g => g.type === 'daily_steps')?.target || 10000;
+  const stepProgress = stepGoal > 0 ? stepCount / stepGoal : 0;
 
   // Keep statusRef in sync with status
   useEffect(() => {
@@ -414,30 +412,31 @@ export default function ActivityScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Main Stats Dashboard */}
         <View style={styles.dashboardContainer}>
-          {/* Elapsed Time - Primary Focus */}
-          <View style={[styles.timeCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-            <Text style={styles.timeLabel}>ELAPSED TIME</Text>
-            <Text style={styles.timeValue}>{formatDuration(elapsedTime)}</Text>
+          {/* Progress Ring Section */}
+          <View style={styles.progressRingContainer}>
+            <ProgressRing 
+              progress={stepProgress} 
+              size="large"
+              displayValue={stepCount.toLocaleString()}
+              label="steps"
+            />
           </View>
 
-          <View style={styles.statsRow}>
-            {/* Distance */}
+          {/* Distance and Time Below */}
+          <View style={styles.statsBelowRing}>
             <View style={[styles.statBox, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
               <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>DISTANCE</Text>
               <View style={styles.statValueContainer}>
                 <Text style={[styles.statValue, { color: colors.text }]}>{(distance / 1000).toFixed(2)}</Text>
                 <Text style={styles.statUnit}>km</Text>
               </View>
-              <Text style={styles.statDelta}>+{(distance / 1000).toFixed(1)} km</Text>
             </View>
 
-            {/* Steps */}
             <View style={[styles.statBox, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-              <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>STEPS</Text>
+              <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>TIME</Text>
               <View style={styles.statValueContainer}>
-                <Text style={[styles.statValue, { color: colors.text }]}>{stepCount.toLocaleString()}</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{formatDuration(elapsedTime)}</Text>
               </View>
-              <Text style={styles.statDelta}>+{stepCount > 0 ? stepCount : 0}</Text>
             </View>
           </View>
         </View>
@@ -539,8 +538,19 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   dashboardContainer: {
+    alignItems: 'center',
     paddingHorizontal: 16,
     gap: 16,
+  },
+  progressRingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  statsBelowRing: {
+    flexDirection: 'row',
+    gap: 16,
+    width: '100%',
   },
   timeCard: {
     alignItems: 'center',
@@ -641,5 +651,36 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bubbleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  bubbleButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 4,
+  },
+  bubbleContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(19, 236, 109, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(19, 236, 109, 0.3)',
+  },
+  emptyBubbleContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(148, 163, 184, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
 });
