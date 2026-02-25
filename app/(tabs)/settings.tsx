@@ -1,45 +1,45 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-  Modal,
-  TouchableOpacity,
-} from 'react-native';
-import { Stack, router } from 'expo-router';
-import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { DesignTokens } from '@/constants/theme';
 import {
-  exportData,
-  importFromJSON,
-  readImportFile,
-  ExportFormat,
-  DataType,
-  getExportSummary,
-} from '@/lib/export';
-import {
-  loadBackupConfig,
-  performBackup,
+  BackupConfig,
+  BackupHistoryEntry,
+  BackupProvider,
+  clearBackupHistory,
+  deleteBackupFromHistory,
   getBackupHistory,
   getBackupStats,
-  deleteBackupFromHistory,
-  clearBackupHistory,
-  BackupConfig,
-  BackupProvider,
-  BackupHistoryEntry,
+  loadBackupConfig,
+  performBackup,
 } from '@/lib/backup';
+import {
+  DataType,
+  ExportFormat,
+  exportData,
+  getExportSummary,
+  importFromJSON,
+  readImportFile,
+} from '@/lib/export';
 import { useActivityStore } from '@/stores/activity-store';
+import { useCalibrationStore } from '@/stores/calibration-store';
 import { useGoalStore } from '@/stores/goal-store';
 import { useHydrationStore } from '@/stores/hydration-store';
-import { useCalibrationStore } from '@/stores/calibration-store';
 
 // Type definitions
 interface ExportOption {

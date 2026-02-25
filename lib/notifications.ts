@@ -22,6 +22,8 @@ export const NOTIFICATION_IDS = {
   WEATHER_RAIN_ALERT: 'weather-rain-alert',
   WEATHER_TEMPERATURE_ALERT: 'weather-temperature-alert',
   DAILY_WEATHER_BRIEFING: 'daily-weather-briefing',
+  DEEPWORK_HYDRATION: 'deepwork-hydration',
+  DEEPWORK_STRETCH: 'deepwork-stretch',
 } as const;
 
 /**
@@ -532,6 +534,152 @@ export async function sendDailyReportWithStats(
     },
     trigger: null, // Show immediately
   });
+}
+
+// ==================== Deepwork Notifications ====================
+
+/**
+ * Schedule recurring hydration reminder for deepwork mode
+ * @param intervalMinutes - Interval in minutes between reminders
+ */
+export async function scheduleDeepworkHydrationReminder(
+  intervalMinutes: number = 30
+): Promise<string | null> {
+  // Cancel any existing deepwork hydration reminders
+  await cancelDeepworkHydrationReminder();
+
+  const hasPermission = await requestNotificationPermissions();
+  if (!hasPermission) {
+    console.log('Notification permissions not granted');
+    return null;
+  }
+
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '💧 Deepwork: Hydration Break',
+      body: `Stay focused and hydrated! Time for a quick water break.`,
+      data: {
+        type: 'deepwork_hydration',
+        screen: '/hydration',
+      },
+      sound: 'default',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: intervalMinutes * 60,
+      repeats: true,
+    },
+  });
+
+  console.log(`Scheduled deepwork hydration reminder every ${intervalMinutes} minutes`);
+  return identifier;
+}
+
+/**
+ * Schedule recurring stretch reminder for deepwork mode
+ * @param intervalMinutes - Interval in minutes between reminders
+ */
+export async function scheduleDeepworkStretchReminder(
+  intervalMinutes: number = 45
+): Promise<string | null> {
+  // Cancel any existing deepwork stretch reminders
+  await cancelDeepworkStretchReminder();
+
+  const hasPermission = await requestNotificationPermissions();
+  if (!hasPermission) {
+    console.log('Notification permissions not granted');
+    return null;
+  }
+
+  const identifier = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '🧘 Deepwork: Stretch Break',
+      body: `Time to stretch! Stand up and move to refresh your body and mind.`,
+      data: {
+        type: 'deepwork_stretch',
+        screen: '/',
+      },
+      sound: 'default',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: intervalMinutes * 60,
+      repeats: true,
+    },
+  });
+
+  console.log(`Scheduled deepwork stretch reminder every ${intervalMinutes} minutes`);
+  return identifier;
+}
+
+/**
+ * Cancel deepwork hydration reminder
+ */
+export async function cancelDeepworkHydrationReminder(): Promise<void> {
+  const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+
+  for (const notification of scheduledNotifications) {
+    if (notification.content.data?.type === 'deepwork_hydration') {
+      await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+      console.log('Cancelled deepwork hydration reminder');
+    }
+  }
+}
+
+/**
+ * Cancel deepwork stretch reminder
+ */
+export async function cancelDeepworkStretchReminder(): Promise<void> {
+  const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+
+  for (const notification of scheduledNotifications) {
+    if (notification.content.data?.type === 'deepwork_stretch') {
+      await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+      console.log('Cancelled deepwork stretch reminder');
+    }
+  }
+}
+
+/**
+ * Cancel all deepwork reminders (hydration and stretch)
+ */
+export async function cancelDeepworkReminders(): Promise<void> {
+  await Promise.all([
+    cancelDeepworkHydrationReminder(),
+    cancelDeepworkStretchReminder(),
+  ]);
+  console.log('Cancelled all deepwork reminders');
+}
+
+/**
+ * Toggle deepwork mode on or off
+ * @param enabled - Whether deepwork mode should be enabled
+ * @param hydrationIntervalMinutes - Hydration reminder interval in minutes
+ * @param stretchIntervalMinutes - Stretch reminder interval in minutes
+ */
+export async function toggleDeepworkMode(
+  enabled: boolean,
+  hydrationIntervalMinutes: number = 30,
+  stretchIntervalMinutes: number = 45
+): Promise<void> {
+  if (enabled) {
+    // Cancel any existing deepwork reminders first
+    await cancelDeepworkReminders();
+
+    // Schedule new reminders
+    await Promise.all([
+      scheduleDeepworkHydrationReminder(hydrationIntervalMinutes),
+      scheduleDeepworkStretchReminder(stretchIntervalMinutes),
+    ]);
+
+    console.log(
+      `Deepwork mode enabled: hydration every ${hydrationIntervalMinutes}min, stretch every ${stretchIntervalMinutes}min`
+    );
+  } else {
+    // Disable deepwork mode - cancel all reminders
+    await cancelDeepworkReminders();
+    console.log('Deepwork mode disabled');
+  }
 }
 
 // Configure Android notification channel

@@ -1,12 +1,15 @@
+import { Card } from '@/components/card';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { toggleDeepworkMode } from '@/lib/notifications';
 import { useActivityStore } from '@/stores/activity-store';
+import { useDeepworkStore } from '@/stores/deepwork-store';
 import { useGoalStore } from '@/stores/goal-store';
 import { useHydrationStore } from '@/stores/hydration-store';
-import { MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Link, useFocusEffect, useRouter } from 'expo-router';
 import React from 'react';
-import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 
@@ -67,6 +70,18 @@ export default function HomeScreen() {
     const { loadActivities, getTodayStats } = useActivityStore();
     const { loadLogs, todayTotal: hydrationTotal, dailyGoal: hydrationGoal, quickAdd, getTodayLogs, deleteLog } = useHydrationStore();
     const { loadGoals, autoCreateDailyGoals, getTodayGoals } = useGoalStore();
+    const { deepworkEnabled, loadSettings, toggleDeepwork, hydrationIntervalMinutes, stretchIntervalMinutes } = useDeepworkStore();
+
+    // Load deepwork settings on mount
+    React.useEffect(() => {
+        loadSettings();
+    }, []);
+
+    // Handle deepwork toggle
+    const handleDeepworkToggle = async (value: boolean) => {
+        await toggleDeepworkMode(value, hydrationIntervalMinutes, stretchIntervalMinutes);
+        await toggleDeepwork();
+    };
 
     // Refresh data when screen receives focus
     useFocusEffect(
@@ -133,6 +148,41 @@ export default function HomeScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                {/* Deep Work Toggle */}
+                <TouchableOpacity 
+                    activeOpacity={0.8}
+                    onPress={() => router.push('/deepwork')}
+                >
+                    <Card style={StyleSheet.flatten([
+                        styles.deepworkCard,
+                        deepworkEnabled && styles.deepworkCardActive
+                    ])}>
+                        <View style={styles.deepworkContent}>
+                            <View style={styles.deepworkIconContainer}>
+                                <Ionicons 
+                                    name={deepworkEnabled ? 'bulb' : 'bulb-outline'} 
+                                    size={28} 
+                                    color={deepworkEnabled ? '#FFD700' : DesignTokens.primary} 
+                                />
+                            </View>
+                            <View style={styles.deepworkInfo}>
+                                <Text style={styles.deepworkTitle}>Deep Work</Text>
+                                <Text style={styles.deepworkDescription}>
+                                    {deepworkEnabled 
+                                        ? `Focus mode active - hydration & stretch reminders`
+                                        : 'Tap to enable focus mode with reminders'}
+                                </Text>
+                            </View>
+                            <Switch
+                                value={deepworkEnabled}
+                                onValueChange={handleDeepworkToggle}
+                                trackColor={{ false: '#767577', true: DesignTokens.primary }}
+                                thumbColor={deepworkEnabled ? '#fff' : '#f4f3f4'}
+                            />
+                        </View>
+                    </Card>
+                </TouchableOpacity>
+
                 {/* Progress Ring Section */}
                 <View style={styles.section}>
                     <ProgressRing progress={stats.steps} total={stepGoal} />
@@ -258,6 +308,44 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         paddingBottom: 100,
+        paddingHorizontal: 16,
+    },
+    // Deep Work Card Styles
+    deepworkCard: {
+        marginTop: 16,
+        marginBottom: 8,
+        padding: 16,
+    },
+    deepworkCardActive: {
+        backgroundColor: 'rgba(255, 215, 0, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 215, 0, 0.3)',
+    },
+    deepworkContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    deepworkIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    deepworkInfo: {
+        flex: 1,
+    },
+    deepworkTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: DesignTokens.textPrimary,
+        marginBottom: 2,
+    },
+    deepworkDescription: {
+        fontSize: 13,
+        color: DesignTokens.textSecondary,
     },
     section: {
         alignItems: 'center',
