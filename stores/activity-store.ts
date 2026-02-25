@@ -1,16 +1,15 @@
-import { create } from 'zustand';
 import {
   Activity,
   RoutePoint,
   createActivity,
-  updateActivity,
-  endActivity,
   deleteActivity,
-  getActivities,
-  getActivityById,
+  endActivity,
   getActiveActivity,
+  getActivities,
   initDatabase,
+  updateActivity
 } from '@/lib/db';
+import { create } from 'zustand';
 
 // Generate unique ID
 function generateId(): string {
@@ -27,6 +26,10 @@ interface ActivityState {
   isLoading: boolean;
   error: string | null;
   lastSyncTime: number;
+
+  // Pause tracking - for accurate time calculation
+  pausedAt: number | null;  // Timestamp when activity was paused
+  totalPausedMs: number;    // Total time spent paused in milliseconds
 
   // Actions
   loadActivities: (limit?: number) => Promise<void>;
@@ -45,6 +48,9 @@ interface ActivityState {
   getActivitiesForDateRange: (startDate: Date, endDate: Date) => Activity[];
   getTodayStats: () => { steps: number; distance: number; duration: number };
   loadActiveActivity: () => Promise<void>;
+  
+  // Helper to calculate elapsed time accounting for pauses
+  getElapsedTime: (startTime: number) => number;
 }
 
 export const useActivityStore = create<ActivityState>((set, get) => ({
@@ -55,6 +61,10 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
   isLoading: false,
   error: null,
   lastSyncTime: 0,
+  
+  // Pause tracking - for accurate time calculation
+  pausedAt: null,
+  totalPausedMs: 0,
 
   // Load activities from database
   loadActivities: async (limit = 50) => {
@@ -77,9 +87,17 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       await initDatabase();
       const activeActivity = await getActiveActivity();
       if (activeActivity) {
+        // Determine if activity was paused based on ended_at
+        // If ended_at is null but there's a duration, it might be paused
+        // For now, set to active if not ended
+        const wasPaused = activeActivity.ended_at === null && activeActivity.duration_ms > 0;
+        
         set({
           currentActivity: activeActivity,
-          status: 'active',
+          status: wasPaused ? 'paused' : 'active',
+          // Reset pause tracking for resumed activity
+          pausedAt: null,
+          totalPausedMs: 0,
         });
       }
     } catch (err) {
@@ -112,6 +130,9 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
         currentActivity: newActivity,
         status: 'active',
         isLoading: false,
+        // Reset pause tracking for new activity
+        pausedAt: null,
+        totalPausedMs: 0,
       });
 
       return newActivity;
@@ -126,23 +147,30 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
 
   // Pause the current activity
   pauseActivity: () => {
-    const { status } = get();
-    if (status === 'active') {
-      set({ status: 'paused' });
+    const { status, pausedAt } = get();
+    if (status === 'active' && !pausedAt) {
+      // Capture the pause timestamp
+      set({ status: 'paused', pausedAt: Date.now() });
     }
   },
 
   // Resume the current activity
   resumeActivity: () => {
-    const { status, currentActivity } = get();
-    if (status === 'paused' && currentActivity) {
-      set({ status: 'active' });
+    const { status, currentActivity, pausedAt, totalPausedMs } = get();
+    if (status === 'paused' && currentActivity && pausedAt) {
+      // Calculate pause duration and add to total
+      const pauseDuration = Date.now() - pausedAt;
+      set({ 
+        status: 'active', 
+        pausedAt: null,
+        totalPausedMs: totalPausedMs + pauseDuration
+      });
     }
   },
 
   // End the current activity
   endActivity: async () => {
-    const { currentActivity } = get();
+    const { currentActivity, totalPausedMs } = get();
     if (!currentActivity) return;
 
     set({ isLoading: true, error: null });
@@ -150,12 +178,17 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       await initDatabase();
       const endedAt = Date.now();
 
+      // Calculate final duration accounting for pauses
+      const startedAt = currentActivity.started_at;
+      const finalDuration = endedAt - startedAt - totalPausedMs;
+
       await endActivity(currentActivity.id, endedAt);
 
       // Update local state
       const updatedActivity: Activity = {
         ...currentActivity,
         ended_at: endedAt,
+        duration_ms: finalDuration,
       };
 
       const activities = await getActivities(50);
@@ -165,6 +198,9 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
         status: 'idle',
         activities,
         isLoading: false,
+        // Reset pause tracking
+        pausedAt: null,
+        totalPausedMs: 0,
       });
     } catch (err) {
       set({
@@ -365,5 +401,27 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       }),
       { steps: 0, distance: 0, duration: 0 }
     );
+  },
+
+  // Calculate elapsed time accounting for pauses
+  getElapsedTime: (startTime: number) => {
+    const { status, pausedAt, totalPausedMs } = get();
+    const now = Date.now();
+    
+    // If activity hasn't started, return 0
+    if (!startTime) return 0;
+    
+    // Calculate current elapsed time
+    let currentElapsed = now - startTime;
+    
+    // Subtract total paused time
+    currentElapsed -= totalPausedMs;
+    
+    // If currently paused, subtract the current pause duration
+    if (status === 'paused' && pausedAt) {
+      currentElapsed -= (now - pausedAt);
+    }
+    
+    return Math.max(0, currentElapsed);
   },
 }));

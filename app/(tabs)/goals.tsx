@@ -1,22 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TextInput, Pressable, Switch, Dimensions, Alert, Modal } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getGoalsForDate, updateGoal, createGoal } from '@/lib/db';
+import { createGoal, getGoalsForDate, updateGoal } from '@/lib/db';
+import {
+    cancelDailyGoalReminder,
+    cancelDailyReport,
+    cancelRecurringHydrationReminder,
+    requestNotificationPermissions,
+    scheduleDailyGoalReminder,
+    scheduleDailyReport,
+    scheduleRecurringHydrationReminder,
+} from '@/lib/notifications';
 import { useGoalStore } from '@/stores/goal-store';
 import { useHydrationStore } from '@/stores/hydration-store';
-import {
-    scheduleRecurringHydrationReminder,
-    cancelRecurringHydrationReminder,
-    scheduleDailyGoalReminder,
-    cancelDailyGoalReminder,
-    scheduleDailyReport,
-    cancelDailyReport,
-    requestNotificationPermissions,
-} from '@/lib/notifications';
+import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState } from 'react';
+import { Alert, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Helper function to format time in 12-hour format
+const formatTime12Hour = (hour: number, minute: number): string => {
+    const period = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12; // Convert 0 to 12 for 12 AM
+    const displayMinute = String(minute).padStart(2, '0');
+    return `${displayHour}:${displayMinute} ${period}`;
+};
+
+// Helper function to format time in 12-hour format from 24-hour values
+const formatTimeString12Hour = (timeStr: string): string => {
+    const [hour, minute] = timeStr.split(':').map(Number);
+    return formatTime12Hour(hour, minute);
+};
 
 const { width } = Dimensions.get('window');
 
@@ -32,6 +46,9 @@ export default function GoalsScreen() {
         hydration: false,
         dailySummary: true,
     });
+
+    // Hydration interval state (in hours)
+    const [hydrationInterval, setHydrationInterval] = useState(2);
 
     const [dailyStepGoal, setDailyStepGoal] = useState('10000');
     const [dailyDistance, setDailyDistance] = useState('8.0');
@@ -57,25 +74,46 @@ export default function GoalsScreen() {
         setNotifications((prev) => ({ ...prev, [key]: !prev[key] }));
     };
 
+    // Handle hydration interval change
+    const handleHydrationIntervalChange = async (interval: number) => {
+        setHydrationInterval(interval);
+        // Reschedule the hydration reminder with the new interval if it's enabled
+        if (notifications.hydration) {
+            await scheduleRecurringHydrationReminder(interval * 60, true);
+        }
+    };
+
     // Load custom reminders on mount
     React.useEffect(() => {
         loadCustomReminders();
     }, []);
 
-    // Initialize notifications on mount
+    // Initialize notifications on mount (run only once)
+    const notificationsRef = React.useRef(notifications);
+    const hydrationIntervalRef = React.useRef(hydrationInterval);
+    
+    // Keep refs in sync with state
+    React.useEffect(() => {
+        notificationsRef.current = notifications;
+    }, [notifications]);
+    
+    React.useEffect(() => {
+        hydrationIntervalRef.current = hydrationInterval;
+    }, [hydrationInterval]);
+
     React.useEffect(() => {
         const initNotifications = async () => {
             // Request permissions on first load
             await requestNotificationPermissions();
 
             // Schedule active notifications based on current state
-            if (notifications.stayActive) {
+            if (notificationsRef.current.stayActive) {
                 await scheduleDailyGoalReminder(true);
             }
-            if (notifications.hydration) {
-                await scheduleRecurringHydrationReminder(120, true); // Every 2 hours
+            if (notificationsRef.current.hydration) {
+                await scheduleRecurringHydrationReminder(hydrationIntervalRef.current * 60, true); // Every X hours
             }
-            if (notifications.dailySummary) {
+            if (notificationsRef.current.dailySummary) {
                 await scheduleDailyReport(true);
             }
         };
@@ -96,9 +134,9 @@ export default function GoalsScreen() {
                     await cancelDailyGoalReminder();
                 }
             } else if (key === 'hydration') {
-                // Recurring hydration reminder every 2 hours
+                // Recurring hydration reminder every X hours
                 if (newValue) {
-                    await scheduleRecurringHydrationReminder(120, true);
+                    await scheduleRecurringHydrationReminder(hydrationInterval * 60, true);
                 } else {
                     await cancelRecurringHydrationReminder();
                 }
@@ -430,9 +468,25 @@ export default function GoalsScreen() {
                                 <View style={styles.reminderIcon}>
                                     <MaterialIcons name="local-drink" size={24} color={DesignTokens.primary} />
                                 </View>
-                                <View>
+                                <View style={{ flex: 1 }}>
                                     <Text style={[styles.reminderTitle, { color: colors.text }]}>Hydration Alert</Text>
-                                    <Text style={styles.reminderSubtitle}>Every 2 hours</Text>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                        <Pressable
+                                            onPress={() => hydrationInterval > 1 && handleHydrationIntervalChange(hydrationInterval - 1)}
+                                            style={{ padding: 4 }}
+                                            disabled={hydrationInterval <= 1}
+                                        >
+                                            <MaterialIcons name="remove-circle" size={20} color={hydrationInterval <= 1 ? '#9db9a8' : DesignTokens.primary} />
+                                        </Pressable>
+                                        <Text style={[styles.reminderSubtitle, { marginHorizontal: 8 }]}>Every {hydrationInterval} hour{hydrationInterval > 1 ? 's' : ''}</Text>
+                                        <Pressable
+                                            onPress={() => hydrationInterval < 4 && handleHydrationIntervalChange(hydrationInterval + 1)}
+                                            style={{ padding: 4 }}
+                                            disabled={hydrationInterval >= 4}
+                                        >
+                                            <MaterialIcons name="add-circle" size={20} color={hydrationInterval >= 4 ? '#9db9a8' : DesignTokens.primary} />
+                                        </Pressable>
+                                    </View>
                                 </View>
                             </View>
                             <Switch
@@ -451,7 +505,7 @@ export default function GoalsScreen() {
                                 </View>
                                 <View>
                                     <Text style={[styles.reminderTitle, { color: colors.text }]}>Daily Summary</Text>
-                                    <Text style={styles.reminderSubtitle}>Every day at 21:00</Text>
+                                    <Text style={styles.reminderSubtitle}>Every day at {formatTimeString12Hour('21:00')}</Text>
                                 </View>
                             </View>
                             <Switch
@@ -472,7 +526,7 @@ export default function GoalsScreen() {
                                     <View style={{ flex: 1 }}>
                                         <Text style={[styles.reminderTitle, { color: colors.text }]}>{reminder.title}</Text>
                                         <Text style={styles.reminderSubtitle}>
-                                            Daily at {String(reminder.hour).padStart(2, '0')}:{String(reminder.minute).padStart(2, '0')}
+                                            Daily at {formatTime12Hour(reminder.hour, reminder.minute)}
                                         </Text>
                                     </View>
                                     <Pressable onPress={() => deleteCustomReminder(reminder.id)} style={{ marginRight: 8 }}>
@@ -688,6 +742,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 16,
+        flexShrink: 1,
     },
     reminderIcon: {
         width: 40,

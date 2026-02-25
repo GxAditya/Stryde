@@ -1,27 +1,46 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Pressable, ScrollView, TextInput, Modal } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useRouter } from 'expo-router';
+import { useActivityStore } from '@/stores/activity-store';
+import { useCalibrationStore } from '@/stores/calibration-store';
+import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, AppStateStatus, Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-interface Exercise {
-    name: string;
-    sets: number;
-    reps: number;
-    weight: number;
-}
+const { width } = Dimensions.get('window');
 
-const EXERCISES = [
-    'Bench Press', 'Squats', 'Deadlift', 'Shoulder Press', 'Pull-ups',
-    'Bicep Curls', 'Tricep Dips', 'Lunges', 'Leg Press', 'Rows'
+// Predefined strength training exercises
+const STRENGTH_EXERCISES = [
+    'Push-ups',
+    'Squats',
+    'Lunges',
+    'Plank',
+    'Burpees',
+    'Dumbbell Curl',
+    'Bench Press',
+    'Deadlift',
+    'Shoulder Press',
+    'Bent Over Row',
+    'Tricep Dip',
+    'Leg Press',
+    'Lat Pulldown',
+    'Bicep Curl',
+    'Chest Fly',
 ];
+
+type SessionMode = 'idle' | 'selecting' | 'single' | 'multiple' | 'active';
+type ExerciseMode = 'single' | 'multiple';
 
 function formatDuration(ms: number): string {
     const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
@@ -31,70 +50,574 @@ export default function StrengthTrainingScreen() {
     const isDark = colorScheme === 'dark';
     const router = useRouter();
 
-    const [isActive, setIsActive] = useState(false);
+    // Store hooks
+    const {
+        currentActivity,
+        status,
+        startActivity,
+        pauseActivity,
+        resumeActivity,
+        endActivity,
+        updateDuration,
+        loadActiveActivity,
+        getElapsedTime,
+    } = useActivityStore();
+
+    const { getActiveProfile, loadProfiles } = useCalibrationStore();
+
+    // Session flow state
+    const [sessionMode, setSessionMode] = useState<SessionMode>('idle');
+    const [exerciseMode, setExerciseMode] = useState<ExerciseMode>('single');
+    
+    // Exercise selection state
+    const [selectedPredefinedExercise, setSelectedPredefinedExercise] = useState<number | null>(null);
+    const [customExerciseName, setCustomExerciseName] = useState('');
+    const [selectedExercises, setSelectedExercises] = useState<number[]>([]);
+    const [customExercises, setCustomExercises] = useState<string[]>([]);
+    const [customExerciseInput, setCustomExerciseInput] = useState('');
+
+    // Activity state
     const [duration, setDuration] = useState(0);
-    const [exercises, setExercises] = useState<Exercise[]>([]);
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [selectedExercise, setSelectedExercise] = useState(EXERCISES[0]);
-    const [sets, setSets] = useState('3');
-    const [reps, setReps] = useState('10');
-    const [weight, setWeight] = useState('50');
+    const [exerciseCount, setExerciseCount] = useState(0);
+    const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+    const [caloriesBurned, setCaloriesBurned] = useState(0);
+    const [isLoading, setIsLoading] = useState(false);
 
+    // Refs
     const startTimeRef = useRef<number>(0);
-    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pausedTimeRef = useRef<number>(0);
+    const appState = useRef<AppStateStatus>(AppState.currentState);
+    const statusRef = useRef<string>(status);
+    const lastDbWriteTime = useRef<number>(0);
+    const selectedExercisesRef = useRef<Array<{ type: 'predefined' | 'custom'; index: number; name: string }>>([]);
 
+    // Keep statusRef in sync with status
     useEffect(() => {
-        if (isActive) {
-            startTimeRef.current = Date.now() - duration;
-            intervalRef.current = setInterval(() => {
-                const elapsed = Date.now() - startTimeRef.current;
-                setDuration(elapsed);
-            }, 1000);
-        } else {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
+        statusRef.current = status;
+    }, [status]);
+
+    // Handle app state changes
+    const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
+        if (appState.current === 'active' && nextAppState === 'background') {
+            if (statusRef.current === 'active') {
+                console.log('App going to background - pausing activity timer');
+                pauseActivity();
+            }
+        } else if (appState.current === 'background' && nextAppState === 'active') {
+            if (statusRef.current === 'paused') {
+                console.log('App coming to foreground - resuming activity');
+                resumeActivity();
             }
         }
+        appState.current = nextAppState;
+    }, [pauseActivity, resumeActivity]);
 
+    // Load profiles and any active activity on mount
+    useEffect(() => {
+        loadProfiles();
+        loadActiveActivity();
+        const subscription = AppState.addEventListener('change', handleAppStateChange);
         return () => {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
+            subscription.remove();
+        };
+    }, [handleAppStateChange, loadActiveActivity, loadProfiles]);
+
+    // Sync with currentActivity when it changes
+    useEffect(() => {
+        if (currentActivity && currentActivity.duration_ms > 0) {
+            setDuration(currentActivity.duration_ms);
+            startTimeRef.current = currentActivity.started_at;
+        }
+    }, [currentActivity?.id, currentActivity]);
+
+    // Timer effect
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+
+        if (status === 'active' && startTimeRef.current > 0) {
+            interval = setInterval(() => {
+                const now = Date.now();
+                const elapsed = getElapsedTime(startTimeRef.current);
+                setDuration(elapsed);
+                
+                // Estimate calories (strength training burns ~5-7 cal/min)
+                setCaloriesBurned(Math.floor((elapsed / 1000 / 60) * 6));
+
+                if (now - lastDbWriteTime.current >= 30000) {
+                    updateDuration(elapsed);
+                    lastDbWriteTime.current = now;
+                }
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [status, getElapsedTime, updateDuration]);
+
+    // Handle exercise mode change
+    const handleExerciseModeChange = (mode: ExerciseMode) => {
+        setExerciseMode(mode);
+        // Reset selections when switching modes
+        setSelectedPredefinedExercise(null);
+        setCustomExerciseName('');
+        setSelectedExercises([]);
+        setCustomExercises([]);
+    };
+
+    // Handle predefined exercise selection (single mode)
+    const handlePredefinedExerciseSelect = (index: number) => {
+        setSelectedPredefinedExercise(index);
+        setCustomExerciseName(''); // Clear custom input when selecting predefined
+    };
+
+    // Handle custom exercise input change (single mode)
+    const handleCustomExerciseChange = (text: string) => {
+        setCustomExerciseName(text);
+        setSelectedPredefinedExercise(null); // Clear predefined when typing custom
+    };
+
+    // Handle predefined exercise toggle (multiple mode)
+    const handlePredefinedExerciseToggle = (index: number) => {
+        if (selectedExercises.includes(index)) {
+            setSelectedExercises(selectedExercises.filter(i => i !== index));
+        } else {
+            setSelectedExercises([...selectedExercises, index]);
+        }
+    };
+
+    // Handle adding custom exercise to session (multiple mode)
+    const handleAddCustomExercise = () => {
+        if (customExerciseInput.trim()) {
+            setCustomExercises([...customExercises, customExerciseInput.trim()]);
+            setCustomExerciseInput('');
+        }
+    };
+
+    // Handle removing exercise from selected list
+    const handleRemoveExercise = (type: 'predefined' | 'custom', index: number) => {
+        if (type === 'predefined') {
+            setSelectedExercises(selectedExercises.filter(i => i !== index));
+        } else {
+            setCustomExercises(customExercises.filter((_, i) => i !== index));
+        }
+    };
+
+    // Build the session exercises array
+    const getSessionExercises = (): Array<{ type: 'predefined' | 'custom'; index: number; name: string }> => {
+        const exercises: Array<{ type: 'predefined' | 'custom'; index: number; name: string }> = [];
+        
+        if (exerciseMode === 'single') {
+            if (selectedPredefinedExercise !== null) {
+                exercises.push({ type: 'predefined', index: selectedPredefinedExercise, name: STRENGTH_EXERCISES[selectedPredefinedExercise] });
+            } else if (customExerciseName.trim()) {
+                exercises.push({ type: 'custom', index: -1, name: customExerciseName.trim() });
             }
-        };
-    }, [isActive]);
-
-    const handleAddExercise = () => {
-        const newExercise: Exercise = {
-            name: selectedExercise,
-            sets: parseInt(sets) || 0,
-            reps: parseInt(reps) || 0,
-            weight: parseFloat(weight) || 0,
-        };
-        setExercises(prev => [...prev, newExercise]);
-        setShowAddModal(false);
-        setSets('3');
-        setReps('10');
-        setWeight('50');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else {
+            // Multiple mode
+            selectedExercises.forEach(index => {
+                exercises.push({ type: 'predefined', index, name: STRENGTH_EXERCISES[index] });
+            });
+            customExercises.forEach((name, i) => {
+                exercises.push({ type: 'custom', index: -1 - i, name });
+            });
+        }
+        
+        return exercises;
     };
 
-    const handleStart = () => {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setIsActive(true);
+    // Check if can start session
+    const canStartSession = () => {
+        const exercises = getSessionExercises();
+        return exercises.length > 0;
     };
 
-    const handleStop = () => {
+    // Get current exercise name for display
+    const getCurrentExerciseName = () => {
+        if (sessionMode === 'idle' || sessionMode === 'selecting') return '';
+        
+        const exercises = getSessionExercises();
+        if (exercises.length === 0) return '';
+        
+        return exercises[currentExerciseIndex]?.name || '';
+    };
+
+    // Handle start session (from initial screen)
+    const handleStartSession = () => {
+        setSessionMode('selecting');
+    };
+
+    // Handle starting from exercise selector
+    const handleStartFromSelector = async () => {
+        if (!canStartSession()) {
+            Alert.alert('No Exercise Selected', 'Please select at least one exercise to start your session.');
+            return;
+        }
+
+        setIsLoading(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        try {
+            const activeProfile = getActiveProfile();
+            if (!activeProfile) {
+                Alert.alert(
+                    'Calibration Required',
+                    'You need to calibrate your step size before starting an activity.',
+                    [
+                        { text: 'Cancel', style: 'cancel', onPress: () => setIsLoading(false) },
+                        {
+                            text: 'Calibrate Now', onPress: () => {
+                                setIsLoading(false);
+                                router.push('/calibration');
+                            }
+                        }
+                    ]
+                );
+                return;
+            }
+            
+            // Store selected exercises
+            selectedExercisesRef.current = getSessionExercises();
+            
+            await startActivity(activeProfile.id);
+            startTimeRef.current = Date.now();
+            lastDbWriteTime.current = Date.now();
+            setDuration(0);
+            setExerciseCount(0);
+            setCurrentExerciseIndex(0);
+            setCaloriesBurned(0);
+            setSessionMode('active');
+        } catch (err) {
+            console.error('Failed to start activity:', err);
+            Alert.alert('Error', 'Failed to start activity. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handlePause = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        const currentElapsed = getElapsedTime(startTimeRef.current);
+        updateDuration(currentElapsed);
+        pauseActivity();
+        pausedTimeRef.current = Date.now();
+    };
+
+    const handleResume = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        const pauseDuration = Date.now() - pausedTimeRef.current;
+        startTimeRef.current += pauseDuration;
+        resumeActivity();
+    };
+
+    const handleStop = async () => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        setIsActive(false);
-        setDuration(0);
-        setExercises([]);
+        
+        Alert.alert('End Session', 'Are you sure you want to end this strength training session?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'End',
+                style: 'destructive',
+                onPress: async () => {
+                    setIsLoading(true);
+                    try {
+                        if (currentActivity) {
+                            const finalDuration = getElapsedTime(startTimeRef.current);
+                            await updateDuration(finalDuration);
+                        }
+                        await endActivity();
+                        setDuration(0);
+                        setExerciseCount(0);
+                        setCurrentExerciseIndex(0);
+                        setCaloriesBurned(0);
+                        startTimeRef.current = 0;
+                        pausedTimeRef.current = 0;
+                        lastDbWriteTime.current = 0;
+                        setSessionMode('idle');
+                        // Reset selection state
+                        setSelectedPredefinedExercise(null);
+                        setCustomExerciseName('');
+                        setSelectedExercises([]);
+                        setCustomExercises([]);
+                    } catch (_err) {
+                        Alert.alert('Error', 'Failed to save activity.');
+                    } finally {
+                        setIsLoading(false);
+                    }
+                },
+            },
+        ]);
     };
 
-    const totalSets = exercises.reduce((sum, ex) => sum + ex.sets, 0);
-    const totalVolume = exercises.reduce((sum, ex) => sum + (ex.sets * ex.reps * ex.weight), 0);
-    const estimatedCalories = Math.floor((duration / 1000 / 60) * 5); // ~5 cal/min
+    const handleNextExercise = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        const exercises = selectedExercisesRef.current;
+        setExerciseCount(prev => prev + 1);
+        setCurrentExerciseIndex(prev => (prev + 1) % exercises.length);
+    };
 
-    return (
+    const handleBackFromSelector = () => {
+        setSessionMode('idle');
+    };
+
+    // Use store status instead of local state
+    const isActive = status !== 'idle';
+    const isPaused = status === 'paused';
+
+    // Render exercise selector screen
+    const renderExerciseSelector = () => (
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            {/* Header */}
+            <View style={styles.header}>
+                <Pressable onPress={handleBackFromSelector} style={styles.backButton}>
+                    <MaterialIcons name="arrow-back-ios" size={24} color={colors.text} />
+                </Pressable>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Choose Your Exercises</Text>
+                <View style={{ width: 40 }} />
+            </View>
+
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                {/* Mode Selector */}
+                <View style={styles.modeSelector}>
+                    <Pressable
+                        style={[
+                            styles.modeButton,
+                            exerciseMode === 'single' && { backgroundColor: DesignTokens.primary }
+                        ]}
+                        onPress={() => handleExerciseModeChange('single')}
+                    >
+                        <MaterialIcons 
+                            name="looks-one" 
+                            size={20} 
+                            color={exerciseMode === 'single' ? DesignTokens.background : colors.text} 
+                        />
+                        <Text style={[
+                            styles.modeButtonText,
+                            { color: exerciseMode === 'single' ? DesignTokens.background : colors.text }
+                        ]}>
+                            Single Exercise
+                        </Text>
+                    </Pressable>
+                    <Pressable
+                        style={[
+                            styles.modeButton,
+                            exerciseMode === 'multiple' && { backgroundColor: DesignTokens.primary }
+                        ]}
+                        onPress={() => handleExerciseModeChange('multiple')}
+                    >
+                        <MaterialIcons 
+                            name="queue" 
+                            size={20} 
+                            color={exerciseMode === 'multiple' ? DesignTokens.background : colors.text} 
+                        />
+                        <Text style={[
+                            styles.modeButtonText,
+                            { color: exerciseMode === 'multiple' ? DesignTokens.background : colors.text }
+                        ]}>
+                            Multiple Exercises
+                        </Text>
+                    </Pressable>
+                </View>
+
+                {/* Single Exercise Mode */}
+                {exerciseMode === 'single' && (
+                    <View style={styles.selectionContainer}>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                            Select an Exercise
+                        </Text>
+                        
+                        {/* Predefined Exercises */}
+                        <Text style={[styles.subsectionTitle, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                            Predefined Exercises
+                        </Text>
+                        <View style={styles.exerciseList}>
+                            {STRENGTH_EXERCISES.map((exercise, index) => (
+                                <Pressable
+                                    key={index}
+                                    style={[
+                                        styles.exerciseItem,
+                                        { backgroundColor: isDark ? DesignTokens.surface : colors.white },
+                                        selectedPredefinedExercise === index && { borderColor: DesignTokens.primary, borderWidth: 2 }
+                                    ]}
+                                    onPress={() => handlePredefinedExerciseSelect(index)}
+                                >
+                                    <View style={styles.exerciseInfo}>
+                                        <Text style={[styles.exerciseName, { color: colors.text }]}>
+                                            {exercise}
+                                        </Text>
+                                    </View>
+                                    <View style={[
+                                        styles.checkbox,
+                                        selectedPredefinedExercise === index && { backgroundColor: DesignTokens.primary }
+                                    ]}>
+                                        {selectedPredefinedExercise === index && (
+                                            <MaterialIcons name="check" size={18} color={DesignTokens.background} />
+                                        )}
+                                    </View>
+                                </Pressable>
+                            ))}
+                        </View>
+
+                        {/* Divider */}
+                        <View style={styles.divider}>
+                            <View style={[styles.dividerLine, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]} />
+                            <Text style={[styles.dividerText, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>OR</Text>
+                            <View style={[styles.dividerLine, { backgroundColor: isDark ? DesignTokens.surface : '#e2e8f0' }]} />
+                        </View>
+
+                        {/* Custom Exercise Input */}
+                        <Text style={[styles.subsectionTitle, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                            Enter Custom Exercise
+                        </Text>
+                        <TextInput
+                            style={[
+                                styles.customInput,
+                                { 
+                                    backgroundColor: isDark ? DesignTokens.surface : colors.white,
+                                    color: colors.text,
+                                    borderColor: customExerciseName ? DesignTokens.primary : (isDark ? '#374151' : '#e2e8f0')
+                                }
+                            ]}
+                            placeholder="Enter exercise name..."
+                            placeholderTextColor={isDark ? DesignTokens.textSecondary : '#94a3b8'}
+                            value={customExerciseName}
+                            onChangeText={handleCustomExerciseChange}
+                        />
+                    </View>
+                )}
+
+                {/* Multiple Exercises Mode */}
+                {exerciseMode === 'multiple' && (
+                    <View style={styles.selectionContainer}>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                            Select Exercises for Your Session
+                        </Text>
+
+                        {/* Predefined Exercises */}
+                        <Text style={[styles.subsectionTitle, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                            Predefined Exercises ({selectedExercises.length} selected)
+                        </Text>
+                        <View style={styles.exerciseList}>
+                            {STRENGTH_EXERCISES.map((exercise, index) => (
+                                <Pressable
+                                    key={index}
+                                    style={[
+                                        styles.exerciseItem,
+                                        { backgroundColor: isDark ? DesignTokens.surface : colors.white },
+                                        selectedExercises.includes(index) && { borderColor: DesignTokens.primary, borderWidth: 2 }
+                                    ]}
+                                    onPress={() => handlePredefinedExerciseToggle(index)}
+                                >
+                                    <View style={styles.exerciseInfo}>
+                                        <Text style={[styles.exerciseName, { color: colors.text }]}>
+                                            {exercise}
+                                        </Text>
+                                    </View>
+                                    <View style={[
+                                        styles.checkbox,
+                                        selectedExercises.includes(index) && { backgroundColor: DesignTokens.primary }
+                                    ]}>
+                                        {selectedExercises.includes(index) && (
+                                            <MaterialIcons name="check" size={18} color={DesignTokens.background} />
+                                        )}
+                                    </View>
+                                </Pressable>
+                            ))}
+                        </View>
+
+                        {/* Custom Exercise Input */}
+                        <Text style={[styles.subsectionTitle, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                            Add Custom Exercises
+                        </Text>
+                        <View style={styles.customExerciseRow}>
+                            <TextInput
+                                style={[
+                                    styles.customInput,
+                                    styles.customInputFlex,
+                                    { 
+                                        backgroundColor: isDark ? DesignTokens.surface : colors.white,
+                                        color: colors.text,
+                                        borderColor: isDark ? '#374151' : '#e2e8f0'
+                                    }
+                                ]}
+                                placeholder="Enter custom exercise name..."
+                                placeholderTextColor={isDark ? DesignTokens.textSecondary : '#94a3b8'}
+                                value={customExerciseInput}
+                                onChangeText={setCustomExerciseInput}
+                            />
+                            <Pressable
+                                style={[styles.addButton, { backgroundColor: DesignTokens.primary }]}
+                                onPress={handleAddCustomExercise}
+                            >
+                                <MaterialIcons name="add" size={24} color={DesignTokens.background} />
+                            </Pressable>
+                        </View>
+
+                        {/* Selected Exercises Display */}
+                        {(selectedExercises.length > 0 || customExercises.length > 0) && (
+                            <View style={styles.selectedExercisesContainer}>
+                                <Text style={[styles.subsectionTitle, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                                    Session Exercises
+                                </Text>
+                                
+                                {selectedExercises.map(index => (
+                                    <View
+                                        key={`predefined-${index}`}
+                                        style={[styles.selectedExerciseItem, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}
+                                    >
+                                        <Text style={[styles.selectedExerciseText, { color: colors.text }]}>
+                                            {STRENGTH_EXERCISES[index]}
+                                        </Text>
+                                        <Pressable
+                                            style={styles.removeButton}
+                                            onPress={() => handleRemoveExercise('predefined', index)}
+                                        >
+                                            <MaterialIcons name="close" size={20} color={DesignTokens.primary} />
+                                        </Pressable>
+                                    </View>
+                                ))}
+                                
+                                {customExercises.map((name, index) => (
+                                    <View
+                                        key={`custom-${index}`}
+                                        style={[styles.selectedExerciseItem, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}
+                                    >
+                                        <Text style={[styles.selectedExerciseText, { color: colors.text }]}>
+                                            {name}
+                                        </Text>
+                                        <Pressable
+                                            style={styles.removeButton}
+                                            onPress={() => handleRemoveExercise('custom', index)}
+                                        >
+                                            <MaterialIcons name="close" size={20} color={DesignTokens.primary} />
+                                        </Pressable>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+                    </View>
+                )}
+
+                <View style={{ height: 120 }} />
+            </ScrollView>
+
+            {/* Bottom Controls */}
+            <View style={styles.bottomControls}>
+                <Pressable
+                    style={[
+                        styles.actionButton,
+                        { backgroundColor: DesignTokens.primary },
+                        !canStartSession() && { opacity: 0.5 }
+                    ]}
+                    onPress={handleStartFromSelector}
+                    disabled={!canStartSession() || isLoading}
+                >
+                    <MaterialIcons name="play-arrow" size={28} color={DesignTokens.background} />
+                    <Text style={styles.actionButtonText}>Start Session</Text>
+                </Pressable>
+            </View>
+        </View>
+    );
+
+    // Render active session screen
+    const renderActiveSession = () => (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
             <View style={styles.header}>
@@ -102,76 +625,50 @@ export default function StrengthTrainingScreen() {
                     <MaterialIcons name="arrow-back-ios" size={24} color={colors.text} />
                 </Pressable>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Strength Training</Text>
-                <Pressable onPress={() => setShowAddModal(true)} style={styles.addButton}>
-                    <MaterialIcons name="add" size={24} color={DesignTokens.primary} />
-                </Pressable>
+                <View style={{ width: 40 }} />
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                {/* Current Exercise Display */}
+                <View style={styles.exerciseContainer}>
+                    <Text style={[styles.exerciseLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                        CURRENT EXERCISE
+                    </Text>
+                    <Text style={[styles.exerciseNameActive, { color: colors.text }]}>
+                        {getCurrentExerciseName()}
+                    </Text>
+                    {!isPaused && selectedExercisesRef.current.length > 1 && (
+                        <Pressable style={styles.nextExerciseButton} onPress={handleNextExercise}>
+                            <MaterialIcons name="skip-next" size={24} color={DesignTokens.primary} />
+                            <Text style={styles.nextExerciseText}>Next Exercise</Text>
+                        </Pressable>
+                    )}
+                </View>
+
                 {/* Stats Grid */}
-                <View style={styles.statsGrid}>
+                <View style={styles.statsContainer}>
+                    {/* Duration */}
                     <View style={[styles.statCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-                        <MaterialIcons name="timer" size={28} color={DesignTokens.primary} />
+                        <MaterialIcons name="timer" size={32} color={DesignTokens.primary} />
                         <Text style={[styles.statValue, { color: colors.text }]}>{formatDuration(duration)}</Text>
                         <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Duration</Text>
                     </View>
-                    <View style={[styles.statCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-                        <MaterialIcons name="fitness-center" size={28} color={DesignTokens.primary} />
-                        <Text style={[styles.statValue, { color: colors.text }]}>{totalSets}</Text>
-                        <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Total Sets</Text>
-                    </View>
-                </View>
 
-                <View style={styles.statsGrid}>
+                    {/* Exercises Completed */}
                     <View style={[styles.statCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-                        <MaterialIcons name="show-chart" size={28} color={DesignTokens.primary} />
-                        <Text style={[styles.statValue, { color: colors.text }]}>{totalVolume.toLocaleString()}</Text>
-                        <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Volume (kg)</Text>
+                        <MaterialIcons name="fitness-center" size={32} color={DesignTokens.primary} />
+                        <Text style={[styles.statValue, { color: colors.text }]}>{exerciseCount}</Text>
+                        <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Exercises</Text>
                     </View>
+
+                    {/* Calories */}
                     <View style={[styles.statCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-                        <MaterialIcons name="local-fire-department" size={28} color={DesignTokens.primary} />
-                        <Text style={[styles.statValue, { color: colors.text }]}>{estimatedCalories}</Text>
+                        <MaterialIcons name="local-fire-department" size={32} color={DesignTokens.primary} />
+                        <Text style={[styles.statValue, { color: colors.text }]}>{caloriesBurned}</Text>
                         <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Calories</Text>
                     </View>
                 </View>
 
-                {/* Exercises List */}
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>Exercises</Text>
-                {exercises.length === 0 ? (
-                    <View style={[styles.emptyState, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-                        <MaterialIcons name="fitness-center" size={48} color={isDark ? '#3b5445' : colors.border} />
-                        <Text style={[styles.emptyText, { color: isDark ? '#9db9a8' : '#64748b' }]}>
-                            No exercises logged yet
-                        </Text>
-                        <Text style={[styles.emptySubtext, { color: isDark ? '#9db9a8' : '#64748b' }]}>
-                            Tap the + button to add exercises
-                        </Text>
-                    </View>
-                ) : (
-                    <View style={styles.exercisesList}>
-                        {exercises.map((exercise, index) => (
-                            <View
-                                key={index}
-                                style={[styles.exerciseCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}
-                            >
-                                <View style={styles.exerciseHeader}>
-                                    <MaterialIcons name="fitness-center" size={24} color={DesignTokens.primary} />
-                                    <Text style={[styles.exerciseName, { color: colors.text }]}>{exercise.name}</Text>
-                                </View>
-                                <View style={styles.exerciseStats}>
-                                    <Text style={[styles.exerciseStat, { color: isDark ? '#9db9a8' : '#64748b' }]}>
-                                        {exercise.sets} sets × {exercise.reps} reps
-                                    </Text>
-                                    <Text style={[styles.exerciseStat, { color: DesignTokens.primary }]}>
-                                        {exercise.weight} kg
-                                    </Text>
-                                </View>
-                            </View>
-                        ))}
-                    </View>
-                )}
-
-                <View style={{ height: 120 }} />
             </ScrollView>
 
             {/* Bottom Controls */}
@@ -184,90 +681,108 @@ export default function StrengthTrainingScreen() {
 
                 <Pressable
                     style={[styles.actionButton, { backgroundColor: DesignTokens.primary }]}
-                    onPress={isActive ? handleStop : handleStart}
+                    onPress={isActive ? (isPaused ? handleResume : handlePause) : handleStartSession}
+                    disabled={isLoading}
                 >
                     <MaterialIcons
-                        name={isActive ? 'stop' : 'play-arrow'}
+                        name={isActive ? (isPaused ? 'play-arrow' : 'pause') : 'play-arrow'}
                         size={28}
                         color={DesignTokens.background}
                     />
                     <Text style={styles.actionButtonText}>
-                        {isActive ? 'End Workout' : 'Start Workout'}
+                        {isActive ? (isPaused ? 'Resume' : 'Pause') : 'Start Session'}
                     </Text>
                 </Pressable>
 
                 {isActive && <View style={{ width: 56 }} />}
             </View>
+        </View>
+    );
 
-            {/* Add Exercise Modal */}
-            <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-                        <Text style={[styles.modalTitle, { color: colors.text }]}>Add Exercise</Text>
+    // Main render - show exercise selector or idle/active screen
+    if (sessionMode === 'selecting') {
+        return renderExerciseSelector();
+    }
 
-                        <Text style={[styles.modalLabel, { color: colors.text }]}>Exercise</Text>
-                        <ScrollView style={styles.exerciseSelector} showsVerticalScrollIndicator={false}>
-                            {EXERCISES.map((ex) => (
-                                <Pressable
-                                    key={ex}
-                                    style={[
-                                        styles.exerciseOption,
-                                        selectedExercise === ex && { backgroundColor: 'rgba(19, 236, 109, 0.1)' }
-                                    ]}
-                                    onPress={() => setSelectedExercise(ex)}
-                                >
-                                    <Text style={[styles.exerciseOptionText, { color: selectedExercise === ex ? DesignTokens.primary : colors.text }]}>
-                                        {ex}
-                                    </Text>
-                                    {selectedExercise === ex && <MaterialIcons name="check" size={20} color={DesignTokens.primary} />}
-                                </Pressable>
-                            ))}
-                        </ScrollView>
+    return (
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            {/* Header */}
+            <View style={styles.header}>
+                <Pressable onPress={() => router.back()} style={styles.backButton}>
+                    <MaterialIcons name="arrow-back-ios" size={24} color={colors.text} />
+                </Pressable>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Strength Training</Text>
+                <View style={{ width: 40 }} />
+            </View>
 
-                        <View style={styles.inputRow}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.modalLabel, { color: colors.text }]}>Sets</Text>
-                                <TextInput
-                                    style={[styles.input, { color: colors.text, borderColor: isDark ? DesignTokens.border : colors.border, backgroundColor: isDark ? DesignTokens.background : '#f9fafb' }]}
-                                    value={sets}
-                                    onChangeText={setSets}
-                                    keyboardType="numeric"
-                                    placeholderTextColor="#9db9a8"
-                                />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.modalLabel, { color: colors.text }]}>Reps</Text>
-                                <TextInput
-                                    style={[styles.input, { color: colors.text, borderColor: isDark ? DesignTokens.border : colors.border, backgroundColor: isDark ? DesignTokens.background : '#f9fafb' }]}
-                                    value={reps}
-                                    onChangeText={setReps}
-                                    keyboardType="numeric"
-                                    placeholderTextColor="#9db9a8"
-                                />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={[styles.modalLabel, { color: colors.text }]}>Weight (kg)</Text>
-                                <TextInput
-                                    style={[styles.input, { color: colors.text, borderColor: isDark ? DesignTokens.border : colors.border, backgroundColor: isDark ? DesignTokens.background : '#f9fafb' }]}
-                                    value={weight}
-                                    onChangeText={setWeight}
-                                    keyboardType="decimal-pad"
-                                    placeholderTextColor="#9db9a8"
-                                />
-                            </View>
-                        </View>
+            <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                {/* Current Exercise Display */}
+                <View style={styles.exerciseContainer}>
+                    <Text style={[styles.exerciseLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                        CURRENT EXERCISE
+                    </Text>
+                    <Text style={[styles.exerciseNameActive, { color: colors.text }]}>
+                        {getCurrentExerciseName()}
+                    </Text>
+                    {!isPaused && selectedExercisesRef.current.length > 1 && (
+                        <Pressable style={styles.nextExerciseButton} onPress={handleNextExercise}>
+                            <MaterialIcons name="skip-next" size={24} color={DesignTokens.primary} />
+                            <Text style={styles.nextExerciseText}>Next Exercise</Text>
+                        </Pressable>
+                    )}
+                </View>
 
-                        <View style={styles.modalButtons}>
-                            <Pressable style={[styles.modalButton, styles.modalButtonCancel]} onPress={() => setShowAddModal(false)}>
-                                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-                            </Pressable>
-                            <Pressable style={[styles.modalButton, styles.modalButtonAdd]} onPress={handleAddExercise}>
-                                <Text style={styles.modalButtonText}>Add Exercise</Text>
-                            </Pressable>
-                        </View>
+                {/* Stats Grid */}
+                <View style={styles.statsContainer}>
+                    {/* Duration */}
+                    <View style={[styles.statCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
+                        <MaterialIcons name="timer" size={32} color={DesignTokens.primary} />
+                        <Text style={[styles.statValue, { color: colors.text }]}>{formatDuration(duration)}</Text>
+                        <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Duration</Text>
+                    </View>
+
+                    {/* Exercises Completed */}
+                    <View style={[styles.statCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
+                        <MaterialIcons name="fitness-center" size={32} color={DesignTokens.primary} />
+                        <Text style={[styles.statValue, { color: colors.text }]}>{exerciseCount}</Text>
+                        <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Exercises</Text>
+                    </View>
+
+                    {/* Calories */}
+                    <View style={[styles.statCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
+                        <MaterialIcons name="local-fire-department" size={32} color={DesignTokens.primary} />
+                        <Text style={[styles.statValue, { color: colors.text }]}>{caloriesBurned}</Text>
+                        <Text style={[styles.statLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>Calories</Text>
                     </View>
                 </View>
-            </Modal>
+
+            </ScrollView>
+
+            {/* Bottom Controls */}
+            <View style={styles.bottomControls}>
+                {isActive && (
+                    <Pressable style={styles.stopButton} onPress={handleStop}>
+                        <MaterialIcons name="stop" size={24} color={DesignTokens.primary} />
+                    </Pressable>
+                )}
+
+                <Pressable
+                    style={[styles.actionButton, { backgroundColor: DesignTokens.primary }]}
+                    onPress={isActive ? (isPaused ? handleResume : handlePause) : handleStartSession}
+                    disabled={isLoading}
+                >
+                    <MaterialIcons
+                        name={isActive ? (isPaused ? 'play-arrow' : 'pause') : 'play-arrow'}
+                        size={28}
+                        color={DesignTokens.background}
+                    />
+                    <Text style={styles.actionButtonText}>
+                        {isActive ? (isPaused ? 'Resume' : 'Pause') : 'Start Session'}
+                    </Text>
+                </Pressable>
+
+                {isActive && <View style={{ width: 56 }} />}
+            </View>
         </View>
     );
 }
@@ -295,19 +810,45 @@ const styles = StyleSheet.create({
         flex: 1,
         textAlign: 'center',
     },
-    addButton: {
-        width: 40,
-        height: 40,
-        justifyContent: 'center',
-        alignItems: 'flex-end',
-    },
     scrollContent: {
         padding: 16,
     },
-    statsGrid: {
+    // Exercise display styles
+    exerciseContainer: {
+        alignItems: 'center',
+        paddingVertical: 32,
+    },
+    exerciseLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        letterSpacing: 1,
+        marginBottom: 8,
+    },
+    exerciseNameActive: {
+        fontSize: 28,
+        fontWeight: 'bold',
+        textAlign: 'center',
+    },
+    nextExerciseButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 16,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+        backgroundColor: 'rgba(19, 236, 109, 0.1)',
+        gap: 4,
+    },
+    nextExerciseText: {
+        color: DesignTokens.primary,
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    // Stats grid
+    statsContainer: {
         flexDirection: 'row',
         gap: 12,
-        marginBottom: 12,
+        marginBottom: 16,
     },
     statCard: {
         flex: 1,
@@ -323,50 +864,151 @@ const styles = StyleSheet.create({
     statLabel: {
         fontSize: 12,
     },
-    sectionTitle: {
+    // Info card
+    infoCard: {
+        padding: 20,
+        borderRadius: 16,
+    },
+    infoTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        marginTop: 12,
         marginBottom: 16,
     },
-    emptyState: {
-        padding: 40,
-        borderRadius: 16,
-        alignItems: 'center',
-    },
-    emptyText: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginTop: 16,
-    },
-    emptySubtext: {
-        fontSize: 14,
-        marginTop: 4,
-    },
-    exercisesList: {
+    benefits: {
         gap: 12,
     },
-    exerciseCard: {
+    benefit: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    benefitText: {
+        fontSize: 14,
+    },
+    // Mode selector
+    modeSelector: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 24,
+    },
+    modeButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: 12,
+        backgroundColor: 'rgba(157, 185, 168, 0.2)',
+    },
+    modeButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    // Selection container
+    selectionContainer: {
+        gap: 12,
+    },
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        marginBottom: 8,
+    },
+    subsectionTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 8,
+        marginTop: 8,
+    },
+    // Exercise list
+    exerciseList: {
+        gap: 8,
+    },
+    exerciseItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         padding: 16,
         borderRadius: 12,
     },
-    exerciseHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 8,
+    exerciseInfo: {
+        flex: 1,
     },
     exerciseName: {
         fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
-    exerciseStats: {
+    checkbox: {
+        width: 24,
+        height: 24,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: DesignTokens.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Divider
+    divider: {
         flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: 16,
+    },
+    dividerLine: {
+        flex: 1,
+        height: 1,
+    },
+    dividerText: {
+        paddingHorizontal: 16,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    // Custom input
+    customInput: {
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 16,
+        fontSize: 16,
+    },
+    customInputFlex: {
+        flex: 1,
+    },
+    customExerciseRow: {
+        flexDirection: 'row',
+        gap: 12,
+        alignItems: 'flex-end',
+    },
+    addButton: {
+        width: 52,
+        height: 52,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Selected exercises
+    selectedExercisesContainer: {
+        marginTop: 16,
+    },
+    selectedExerciseItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 8,
     },
-    exerciseStat: {
+    selectedExerciseText: {
         fontSize: 14,
+        fontWeight: '600',
     },
+    removeButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(19, 236, 109, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Bottom controls
     bottomControls: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -398,79 +1040,5 @@ const styles = StyleSheet.create({
         color: DesignTokens.background,
         fontSize: 18,
         fontWeight: 'bold',
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        justifyContent: 'flex-end',
-    },
-    modalContent: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        padding: 24,
-        maxHeight: '80%',
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 20,
-    },
-    modalLabel: {
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 8,
-        marginTop: 12,
-    },
-    exerciseSelector: {
-        maxHeight: 200,
-        marginBottom: 12,
-    },
-    exerciseOption: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 8,
-        marginBottom: 4,
-    },
-    exerciseOptionText: {
-        fontSize: 16,
-    },
-    inputRow: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    input: {
-        borderWidth: 1,
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-    },
-    modalButtons: {
-        flexDirection: 'row',
-        gap: 12,
-        marginTop: 24,
-    },
-    modalButton: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 8,
-        alignItems: 'center',
-    },
-    modalButtonCancel: {
-        backgroundColor: 'rgba(157, 185, 168, 0.2)',
-    },
-    modalButtonAdd: {
-        backgroundColor: DesignTokens.primary,
-    },
-    modalButtonText: {
-        color: DesignTokens.background,
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    modalButtonTextCancel: {
-        color: '#9db9a8',
-        fontSize: 16,
-        fontWeight: '600',
     },
 });

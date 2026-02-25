@@ -72,6 +72,7 @@ export default function ActivityScreen() {
     updateElevationGain,
     loadActiveActivity,
     updateSteps,
+    getElapsedTime,
   } = useActivityStore();
 
   const { getActiveProfile, loadProfiles } = useCalibrationStore();
@@ -102,6 +103,7 @@ export default function ActivityScreen() {
   const statusRef = useRef<string>(status);
   const lastLocationRef = useRef<Location.LocationObject | null>(null);
   const totalDistanceRef = useRef<number>(0);
+  const lastDbWriteTime = useRef<number>(0);
 
   // Get today's step goal
   const todayGoals = getTodayGoals();
@@ -116,12 +118,20 @@ export default function ActivityScreen() {
   // Handle app state changes
   const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
     if (appState.current === 'active' && nextAppState === 'background') {
+      // App is going to background - pause activity if active
       if (statusRef.current === 'active') {
-        console.log('App going to background - activity continues');
+        console.log('App going to background - pausing activity timer');
+        pauseActivity();
+      }
+    } else if (appState.current === 'background' && nextAppState === 'active') {
+      // App is coming to foreground - resume if it was paused
+      if (statusRef.current === 'paused') {
+        console.log('App coming to foreground - resuming activity');
+        resumeActivity();
       }
     }
     appState.current = nextAppState;
-  }, []);
+  }, [pauseActivity, resumeActivity]);
 
   // Load profiles and any active activity on mount
   useEffect(() => {
@@ -185,6 +195,7 @@ export default function ActivityScreen() {
       startTimeRef.current = Date.now();
       pausedTimeRef.current = 0;
       stepBuffer.current = 0;
+      lastDbWriteTime.current = Date.now();
       setElapsedTime(0);
       setStepCount(0);
       setDistance(0);
@@ -285,6 +296,11 @@ export default function ActivityScreen() {
   const handlePause = () => {
     console.log('[DEBUG] handlePause called, current status:', status);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    // Persist current duration before pausing
+    const currentElapsed = getElapsedTime(startTimeRef.current);
+    updateDuration(currentElapsed);
+    
     pauseActivity();
     pausedTimeRef.current = Date.now();
     cleanupSubscriptions();
@@ -314,8 +330,12 @@ export default function ActivityScreen() {
           setIsLoading(true);
           try {
             if (currentActivity) {
+              // Calculate final duration accounting for pauses
+              // Use getElapsedTime to get accurate time with pause deducted
+              const finalDuration = getElapsedTime(startTimeRef.current);
+              
               await updateDistance(distance);
-              await updateDuration(elapsedTime);
+              await updateDuration(finalDuration);
               await updateElevationGain(elevationGain);
             }
             cleanupSubscriptions();
@@ -329,6 +349,7 @@ export default function ActivityScreen() {
             setIsScreenLocked(false);
             startTimeRef.current = 0;
             pausedTimeRef.current = 0;
+            lastDbWriteTime.current = 0;
           } catch (_err) {
             Alert.alert('Error', 'Failed to save activity.');
           } finally {
@@ -345,19 +366,29 @@ export default function ActivityScreen() {
     setIsScreenLocked(!isScreenLocked);
   };
 
+  // Timer effect - Uses timestamps for accurate time tracking
+  // This approach avoids drift when app is backgrounded
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    if (status === 'active') {
-      // Timer for Duration
+    
+    if (status === 'active' && startTimeRef.current > 0) {
+      // Timer for Duration - calculates from timestamps to avoid drift
       interval = setInterval(() => {
         const now = Date.now();
-        const elapsed = now - startTimeRef.current;
+        // Use timestamp-based calculation: now - startTime - totalPausedTime
+        const elapsed = getElapsedTime(startTimeRef.current);
         setElapsedTime(elapsed);
-        updateDuration(elapsed);
-      }, 1000);
+        
+        // Only persist to database every 30 seconds or if significant time has passed
+        // This reduces excessive database writes
+        if (now - lastDbWriteTime.current >= 30000) {
+          updateDuration(elapsed);
+          lastDbWriteTime.current = now;
+        }
+      }, 1000); // Update UI every second, but only write to DB every 30s
     }
     return () => clearInterval(interval);
-  }, [status, updateDuration]);
+  }, [status, getElapsedTime, updateDuration]);
 
   // GPS-Based Step Calculation (Every 10s as requested)
   useEffect(() => {

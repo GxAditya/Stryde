@@ -1,15 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Pressable, ScrollView, Alert } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useRouter } from 'expo-router';
+import { useActivityStore } from '@/stores/activity-store';
+import { useCalibrationStore } from '@/stores/calibration-store';
+import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, AppStateStatus, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 function formatDuration(ms: number): string {
     const totalSeconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
@@ -19,47 +26,140 @@ export default function SwimmingScreen() {
     const isDark = colorScheme === 'dark';
     const router = useRouter();
 
-    const [isActive, setIsActive] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
+    // Store hooks
+    const {
+        currentActivity,
+        status,
+        startActivity,
+        pauseActivity,
+        resumeActivity,
+        endActivity,
+        updateDuration,
+        loadActiveActivity,
+        getElapsedTime,
+    } = useActivityStore();
+
+    const { getActiveProfile, loadProfiles } = useCalibrationStore();
+
+    // Local state
     const [duration, setDuration] = useState(0);
     const [laps, setLaps] = useState(0);
     const [lapDistance, setLapDistance] = useState(25); // 25m or 50m pool
-    const [strokeType, setStrokeType] = useState('Freestyle');
+    const [customPoolLength, setCustomPoolLength] = useState(''); // Custom pool length input
+    const [isLoading, setIsLoading] = useState(false);
 
+    // Refs
     const startTimeRef = useRef<number>(0);
     const pausedTimeRef = useRef<number>(0);
-    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const lapTimes = useRef<number[]>([]);
+    const appState = useRef<AppStateStatus>(AppState.currentState);
+    const statusRef = useRef<string>(status);
+    const lastDbWriteTime = useRef<number>(0);
 
+    // Keep statusRef in sync with status
     useEffect(() => {
-        if (isActive && !isPaused) {
-            startTimeRef.current = Date.now() - duration;
-            intervalRef.current = setInterval(() => {
-                const elapsed = Date.now() - startTimeRef.current;
-                setDuration(elapsed);
-            }, 100);
-        } else {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
+        statusRef.current = status;
+    }, [status]);
+
+    // Handle app state changes
+    const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
+        if (appState.current === 'active' && nextAppState === 'background') {
+            // App is going to background - pause activity if active
+            if (statusRef.current === 'active') {
+                console.log('App going to background - pausing activity timer');
+                pauseActivity();
+            }
+        } else if (appState.current === 'background' && nextAppState === 'active') {
+            // App is coming to foreground - resume if it was paused
+            if (statusRef.current === 'paused') {
+                console.log('App coming to foreground - resuming activity');
+                resumeActivity();
             }
         }
+        appState.current = nextAppState;
+    }, [pauseActivity, resumeActivity]);
 
+    // Load profiles and any active activity on mount
+    useEffect(() => {
+        loadProfiles();
+        loadActiveActivity();
+        const subscription = AppState.addEventListener('change', handleAppStateChange);
         return () => {
-            if (intervalRef.current) {
-                clearInterval(intervalRef.current);
-            }
+            subscription.remove();
         };
-    }, [isActive, isPaused]);
+    }, [handleAppStateChange, loadActiveActivity, loadProfiles]);
 
-    const handleStart = () => {
+    // Sync with currentActivity when it changes (e.g., after loading from DB)
+    useEffect(() => {
+        if (currentActivity && currentActivity.duration_ms > 0) {
+            setDuration(currentActivity.duration_ms);
+            startTimeRef.current = currentActivity.started_at;
+        }
+    }, [currentActivity?.id, currentActivity]);
+
+    // Timer effect - Uses timestamps for accurate time tracking
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+
+        if (status === 'active' && startTimeRef.current > 0) {
+            interval = setInterval(() => {
+                const now = Date.now();
+                // Use timestamp-based calculation: now - startTime - totalPausedTime
+                const elapsed = getElapsedTime(startTimeRef.current);
+                setDuration(elapsed);
+
+                // Only persist to database every 30 seconds
+                if (now - lastDbWriteTime.current >= 30000) {
+                    updateDuration(elapsed);
+                    lastDbWriteTime.current = now;
+                }
+            }, 1000); // Update UI every second, but only write to DB every 30s
+        }
+        return () => clearInterval(interval);
+    }, [status, getElapsedTime, updateDuration]);
+
+    const handleStart = async () => {
+        setIsLoading(true);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setIsActive(true);
-        setIsPaused(false);
+
+        try {
+            const activeProfile = getActiveProfile();
+            if (!activeProfile) {
+                Alert.alert(
+                    'Calibration Required',
+                    'You need to calibrate your step size before starting an activity.',
+                    [
+                        { text: 'Cancel', style: 'cancel', onPress: () => setIsLoading(false) },
+                        {
+                            text: 'Calibrate Now', onPress: () => {
+                                setIsLoading(false);
+                                router.push('/calibration');
+                            }
+                        }
+                    ]
+                );
+                return;
+            }
+            await startActivity(activeProfile.id);
+            startTimeRef.current = Date.now();
+            lastDbWriteTime.current = Date.now();
+            setDuration(0);
+            setLaps(0);
+        } catch (err) {
+            console.error('Failed to start activity:', err);
+            Alert.alert('Error', 'Failed to start activity. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handlePause = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        setIsPaused(true);
+        
+        // Persist current duration before pausing
+        const currentElapsed = getElapsedTime(startTimeRef.current);
+        updateDuration(currentElapsed);
+        
+        pauseActivity();
         pausedTimeRef.current = Date.now();
     };
 
@@ -67,13 +167,12 @@ export default function SwimmingScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         const pauseDuration = Date.now() - pausedTimeRef.current;
         startTimeRef.current += pauseDuration;
-        setIsPaused(false);
+        resumeActivity();
     };
 
     const handleLap = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         setLaps(prev => prev + 1);
-        lapTimes.current.push(duration);
     };
 
     const handleStop = () => {
@@ -82,21 +181,54 @@ export default function SwimmingScreen() {
             {
                 text: 'End',
                 style: 'destructive',
-                onPress: () => {
+                onPress: async () => {
+                    setIsLoading(true);
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                    setIsActive(false);
-                    setIsPaused(false);
-                    setDuration(0);
-                    setLaps(0);
-                    lapTimes.current = [];
+                    try {
+                        if (currentActivity) {
+                            // Calculate final duration accounting for pauses
+                            const finalDuration = getElapsedTime(startTimeRef.current);
+                            await updateDuration(finalDuration);
+                        }
+                        await endActivity();
+                        setDuration(0);
+                        setLaps(0);
+                        startTimeRef.current = 0;
+                        pausedTimeRef.current = 0;
+                        lastDbWriteTime.current = 0;
+                    } catch (_err) {
+                        Alert.alert('Error', 'Failed to save activity.');
+                    } finally {
+                        setIsLoading(false);
+                    }
                 },
             },
         ]);
     };
 
+    const handleCustomPoolLengthChange = (text: string) => {
+        // Only allow numerical input
+        const numericValue = text.replace(/[^0-9]/g, '');
+        setCustomPoolLength(numericValue);
+        
+        // Update lap distance if custom value is entered
+        if (numericValue && parseInt(numericValue, 10) > 0) {
+            setLapDistance(parseInt(numericValue, 10));
+        }
+    };
+
+    const handleQuickSelectPoolLength = (length: number) => {
+        setLapDistance(length);
+        setCustomPoolLength(length.toString());
+    };
+
     const totalDistance = laps * lapDistance;
     const avgPace = laps > 0 ? duration / laps : 0;
     const estimatedCalories = Math.floor((duration / 1000 / 60) * 7.5); // ~7.5 cal/min swimming
+
+    // Use store status instead of local state
+    const isActive = status !== 'idle';
+    const isPaused = status === 'paused';
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -113,8 +245,10 @@ export default function SwimmingScreen() {
             {!isActive && (
                 <View style={styles.poolTypeContainer}>
                     <Text style={[styles.poolTypeLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
-                        Pool Length
+                        Pool Length (meters)
                     </Text>
+                    
+                    {/* Quick Select Buttons */}
                     <View style={styles.poolTypeButtons}>
                         <Pressable
                             style={[
@@ -122,7 +256,7 @@ export default function SwimmingScreen() {
                                 lapDistance === 25 && { backgroundColor: DesignTokens.primary },
                                 lapDistance !== 25 && { backgroundColor: isDark ? DesignTokens.surface : colors.white }
                             ]}
-                            onPress={() => setLapDistance(25)}
+                            onPress={() => handleQuickSelectPoolLength(25)}
                         >
                             <Text style={[styles.poolTypeButtonText, { color: lapDistance === 25 ? DesignTokens.background : colors.text }]}>
                                 25m
@@ -134,12 +268,40 @@ export default function SwimmingScreen() {
                                 lapDistance === 50 && { backgroundColor: DesignTokens.primary },
                                 lapDistance !== 50 && { backgroundColor: isDark ? DesignTokens.surface : colors.white }
                             ]}
-                            onPress={() => setLapDistance(50)}
+                            onPress={() => handleQuickSelectPoolLength(50)}
                         >
                             <Text style={[styles.poolTypeButtonText, { color: lapDistance === 50 ? DesignTokens.background : colors.text }]}>
                                 50m
                             </Text>
                         </Pressable>
+                    </View>
+                    
+                    {/* Custom Pool Length Input */}
+                    <View style={styles.customPoolInputContainer}>
+                        <Text style={[styles.customPoolInputLabel, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                            Or enter custom length:
+                        </Text>
+                        <View style={styles.customPoolInputWrapper}>
+                            <TextInput
+                                style={[
+                                    styles.customPoolInput,
+                                    { 
+                                        backgroundColor: isDark ? DesignTokens.surface : colors.white,
+                                        color: colors.text,
+                                        borderColor: isDark ? DesignTokens.border : '#e2e8f0'
+                                    }
+                                ]}
+                                value={customPoolLength}
+                                onChangeText={handleCustomPoolLengthChange}
+                                placeholder="e.g., 33"
+                                placeholderTextColor={isDark ? '#6b7280' : '#9ca3af'}
+                                keyboardType="numeric"
+                                returnKeyType="done"
+                            />
+                            <Text style={[styles.customPoolInputSuffix, { color: isDark ? DesignTokens.textSecondary : '#64748b' }]}>
+                                meters
+                            </Text>
+                        </View>
                     </View>
                 </View>
             )}
@@ -151,7 +313,7 @@ export default function SwimmingScreen() {
                     <Text style={[styles.timerValue, { color: colors.text }]}>{formatDuration(duration)}</Text>
                 </View>
 
-                {/* Lap Button (when active) */}
+                {/* Lap Button (when active and not paused) */}
                 {isActive && !isPaused && (
                     <Pressable style={styles.lapButtonLarge} onPress={handleLap}>
                         <MaterialIcons name="flag" size={32} color={DesignTokens.primary} />
@@ -186,26 +348,6 @@ export default function SwimmingScreen() {
                     </View>
                 </View>
 
-                {/* Benefits */}
-                <View style={[styles.benefitsCard, { backgroundColor: isDark ? DesignTokens.surface : colors.white }]}>
-                    <Text style={[styles.benefitsTitle, { color: colors.text }]}>Swimming Benefits</Text>
-                    <View style={styles.benefits}>
-                        <View style={styles.benefit}>
-                            <MaterialIcons name="favorite" size={20} color="DesignTokens.primary" />
-                            <Text style={[styles.benefitText, { color: colors.text }]}>Full-body workout</Text>
-                        </View>
-                        <View style={styles.benefit}>
-                            <MaterialIcons name="self-improvement" size={20} color="DesignTokens.primary" />
-                            <Text style={[styles.benefitText, { color: colors.text }]}>Low-impact cardio</Text>
-                        </View>
-                        <View style={styles.benefit}>
-                            <MaterialIcons name="air" size={20} color="DesignTokens.primary" />
-                            <Text style={[styles.benefitText, { color: colors.text }]}>Improves lung capacity</Text>
-                        </View>
-                    </View>
-                </View>
-
-                <View style={{ height: 120 }} />
             </ScrollView>
 
             {/* Bottom Controls */}
@@ -222,6 +364,7 @@ export default function SwimmingScreen() {
                         { backgroundColor: DesignTokens.primary }
                     ]}
                     onPress={isActive ? (isPaused ? handleResume : handlePause) : handleStart}
+                    disabled={isLoading}
                 >
                     <MaterialIcons
                         name={isActive ? (isPaused ? 'play-arrow' : 'pause') : 'play-arrow'}
@@ -285,6 +428,31 @@ const styles = StyleSheet.create({
     poolTypeButtonText: {
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    customPoolInputContainer: {
+        marginTop: 16,
+    },
+    customPoolInputLabel: {
+        fontSize: 12,
+        marginBottom: 8,
+    },
+    customPoolInputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    customPoolInput: {
+        flex: 1,
+        height: 48,
+        borderRadius: 8,
+        paddingHorizontal: 16,
+        fontSize: 16,
+        fontWeight: 'bold',
+        borderWidth: 1,
+    },
+    customPoolInputSuffix: {
+        fontSize: 14,
+        fontWeight: '600',
     },
     scrollContent: {
         padding: 16,
