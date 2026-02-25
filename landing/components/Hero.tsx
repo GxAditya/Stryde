@@ -1,8 +1,10 @@
 
 import React from 'react';
-import { Zap } from 'lucide-react';
+import { Zap, Download, Loader2 } from 'lucide-react';
+import { useDownload } from '../hooks/useDownload';
 
 const Hero: React.FC = () => {
+  const { download, isLoading, error, downloadProgress } = useDownload();
   return (
     <section className="relative hero-gradient pt-8 md:pt-16 pb-20 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4">
@@ -24,9 +26,26 @@ const Hero: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-4 mt-2">
-              <button className="flex min-w-[240px] cursor-pointer items-center justify-center rounded-2xl h-14 px-8 bg-primary text-background-dark text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all">
-                Download for Android
+              <button 
+                onClick={download}
+                disabled={isLoading}
+                className="flex min-w-[240px] cursor-pointer items-center justify-center rounded-2xl h-14 px-8 bg-primary text-background-dark text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    {downloadProgress || 'Loading...'}
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Download for Android
+                  </>
+                )}
               </button>
+              {error && (
+                <p className="text-red-400 text-xs mt-2">{error}</p>
+              )}
             </div>
 
             <div className="flex items-center gap-4 mt-4">
