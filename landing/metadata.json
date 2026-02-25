@@ -1,0 +1,7 @@
+{
+  "name": "Stryde - Precision Activity Tracking",
+  "description": "High-performance activity tracking with AI gait analysis, Deep Work flow protection, and circadian-synced fitness for nightowls and hustlers.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
