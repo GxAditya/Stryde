@@ -1,8 +1,42 @@
-# Welcome to your Expo app 👋
+<div align="center">
+  <img src="assets/images/icon.png" alt="Stryde" width="120" height="120" />
+  <h1>Stryde</h1>
+  <p>Your ultimate activity tracking companion</p>
+  
+  <!-- Tech Stack Badges -->
+  <p>
+    <img src="https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo">
+    <img src="https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react-native&logoColor=61DAFB" alt="React Native">
+    <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
+    <img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React">
+    <img src="https://img.shields.io/badge/Zustand-4B4B4B?style=for-the-badge&logo=zustand&logoColor=white" alt="Zustand">
+  </p>
+  
+  <!-- License Badge -->
+  <p>
+    <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License">
+    <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/Contributions-Welcome-brightgreen?style=for-the-badge" alt="Contributions Welcome"></a>
+  </p>
+</div>
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+---
 
-## Get started
+## About Stryde
+
+Stryde is a comprehensive activity tracking application built with a focus on **privacy**, **offline-first** design, and **open-source** transparency. Unlike many fitness apps that monetize your data, Stryde keeps your personal information private and works seamlessly without an internet connection.
+
+### Why We Built Stryde
+
+- 🔒 **Privacy First** - Your data stays on your device. We don't track you, sell your data, or require unnecessary permissions.
+- 📴 **Offline-First** - Track your activities anywhere, anytime, even without internet connectivity. Your data syncs locally.
+- 🌍 **Open Source** - Transparent, auditable code. Contribute, fork, or inspect the source code anytime.
+- ⚡ **No Account Required** - Get started instantly. No email, no subscriptions, no barriers.
+- 🎯 **Goal-Oriented** - Set meaningful fitness goals and track your progress over time.
+- 📊 **Comprehensive Tracking** - From running to swimming, yoga to strength training - all your activities in one place.
+
+## Features
+
+## Get Started
 
 1. Install dependencies
 
@@ -25,26 +59,6 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
-## Get a fresh project
+## License
 
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
