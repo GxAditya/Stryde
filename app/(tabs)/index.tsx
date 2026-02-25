@@ -1,14 +1,14 @@
-import React from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, Platform, Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
-import Svg, { Circle } from 'react-native-svg';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { useActivityStore } from '@/stores/activity-store';
-import { useHydrationStore, QUICK_ADD_PRESETS } from '@/stores/hydration-store';
 import { useGoalStore } from '@/stores/goal-store';
+import { useHydrationStore } from '@/stores/hydration-store';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
+import React from 'react';
+import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
 
@@ -51,7 +51,7 @@ const ProgressRing = ({ progress, total }: { progress: number; total: number }) 
             </Svg>
             <View style={styles.ringContent}>
                 <Text style={styles.ringValue}>{progress.toLocaleString()}</Text>
-                <Text style={styles.ringLabel}>/ {safeTotal.toLocaleString()} steps</Text>
+                <Text style={styles.ringLabel}>steps</Text>
             </View>
         </View>
     );
@@ -65,7 +65,7 @@ export default function HomeScreen() {
 
     // Data Stores
     const { loadActivities, getTodayStats } = useActivityStore();
-    const { loadLogs, todayTotal: hydrationTotal, dailyGoal: hydrationGoal, quickAdd } = useHydrationStore();
+    const { loadLogs, todayTotal: hydrationTotal, dailyGoal: hydrationGoal, quickAdd, getTodayLogs, deleteLog } = useHydrationStore();
     const { loadGoals, autoCreateDailyGoals, getTodayGoals } = useGoalStore();
 
     // Refresh data when screen receives focus
@@ -95,6 +95,33 @@ export default function HomeScreen() {
     const distanceKm = (stats.distance / 1000).toFixed(2);
     const activeMinutes = Math.round(stats.duration / 60000);
 
+    // Hydration bubbles: 1 bubble = 250ml
+    const bubbleCount = Math.floor(hydrationTotal / 250);
+    const todayLogs = getTodayLogs();
+
+    const renderHydrationBubbles = () => {
+        const bubbles = [];
+        for (let i = 0; i < bubbleCount; i++) {
+            const log = todayLogs[i];
+            bubbles.push(
+                <Pressable
+                    key={i}
+                    style={styles.bubbleButton}
+                    onPress={() => {
+                        if (log) {
+                            deleteLog(log.id);
+                        }
+                    }}
+                >
+                    <View style={styles.bubbleContainer}>
+                        <MaterialIcons name="water-drop" size={28} color={DesignTokens.primary} />
+                    </View>
+                </Pressable>
+            );
+        }
+        return bubbles;
+    };
+
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Header */}
@@ -103,10 +130,6 @@ export default function HomeScreen() {
                     <MaterialIcons name="bolt" size={32} color={DesignTokens.primary} />
                 </View>
                 <Text style={[styles.appTitle, { color: colors.text }]}>Stryde</Text>
-                <View style={styles.syncedBadge}>
-                    <MaterialIcons name="cloud-done" size={16} color={DesignTokens.primary} />
-                    <Text style={styles.syncedText}>SYNCED</Text>
-                </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -179,28 +202,11 @@ export default function HomeScreen() {
                     </View>
 
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hydrationRow}>
-                        {QUICK_ADD_PRESETS.map((preset, index) => (
-                            <Pressable
-                                key={index}
-                                style={styles.dropButton}
-                                onPress={() => quickAdd(preset.amount)}
-                            >
-                                <View style={{ alignItems: 'center', gap: 4 }}>
-                                    <MaterialIcons name="water-drop" size={32} color={DesignTokens.primary} />
-                                    <Text style={{ fontSize: 10, color: colors.textSecondary }}>{preset.amount}ml</Text>
-                                </View>
-                            </Pressable>
-                        ))}
+                        {renderHydrationBubbles()}
                         <Pressable style={styles.addButton} onPress={() => router.push('/hydration')}>
                             <MaterialIcons name="add" size={24} color={DesignTokens.primary} />
                         </Pressable>
                     </ScrollView>
-                </View>
-
-                {/* Battery Status */}
-                <View style={styles.batteryStatus}>
-                    <MaterialIcons name="battery-charging-full" size={20} color={DesignTokens.primary} />
-                    <Text style={styles.batteryText}>Efficiency Mode Active • Local Data Storage Encrypted</Text>
                 </View>
 
                 <View style={{ height: 40 }} />
@@ -397,6 +403,21 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(19, 236, 109, 0.2)',
         borderWidth: 1,
         borderColor: 'rgba(19, 236, 109, 0.4)',
+    },
+    bubbleButton: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 8,
+    },
+    bubbleContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    bubbleLabel: {
+        fontSize: 9,
+        fontWeight: '600',
+        color: DesignTokens.primary,
+        marginTop: 2,
     },
     batteryStatus: {
         marginHorizontal: 16,

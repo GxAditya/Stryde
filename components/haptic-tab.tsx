@@ -1,9 +1,9 @@
 import { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { PlatformPressable } from '@react-navigation/elements';
 import * as Haptics from 'expo-haptics';
-import { memo, useCallback } from 'react';
+import { useCallback } from 'react';
 
-export const HapticTab = memo(function HapticTab(props: BottomTabBarButtonProps) {
+export function HapticTab(props: BottomTabBarButtonProps) {
   const handlePressIn = useCallback(
     (ev: Parameters<NonNullable<BottomTabBarButtonProps['onPressIn']>>[0]) => {
       if (process.env.EXPO_OS === 'ios') {
@@ -22,4 +22,4 @@ export const HapticTab = memo(function HapticTab(props: BottomTabBarButtonProps)
       onPressIn={handlePressIn}
     />
   );
-});
+}
