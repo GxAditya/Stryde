@@ -1,6 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+// Import wakeup settings functions
+import { shouldSendNotification } from './wakeup-settings';
+
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -52,6 +55,13 @@ export async function scheduleHydrationReminder(
   const hasPermission = await requestNotificationPermissions();
   if (!hasPermission) {
     console.log('Notification permissions not granted');
+    return null;
+  }
+
+  // Check if within awake hours
+  const shouldNotify = await shouldSendNotification();
+  if (!shouldNotify) {
+    console.log('Skipping hydration reminder - outside awake hours');
     return null;
   }
 
@@ -331,6 +341,13 @@ export async function scheduleRecurringHydrationReminder(
     return null;
   }
 
+  // Check if within awake hours - only schedule if within awake hours
+  const shouldNotify = await shouldSendNotification();
+  if (!shouldNotify) {
+    console.log('Skipping recurring hydration reminder - outside awake hours');
+    return null;
+  }
+
   const identifier = await Notifications.scheduleNotificationAsync({
     content: {
       title: '💧 Hydration Reminder',
@@ -381,6 +398,13 @@ export async function scheduleDailyGoalReminder(enabled: boolean = true): Promis
   const hasPermission = await requestNotificationPermissions();
   if (!hasPermission) {
     console.log('Notification permissions not granted');
+    return null;
+  }
+
+  // Check if within awake hours
+  const shouldNotify = await shouldSendNotification();
+  if (!shouldNotify) {
+    console.log('Skipping daily goal reminder - outside awake hours');
     return null;
   }
 
@@ -445,6 +469,13 @@ export async function scheduleDailyReport(enabled: boolean = true): Promise<stri
   const hasPermission = await requestNotificationPermissions();
   if (!hasPermission) {
     console.log('Notification permissions not granted');
+    return null;
+  }
+
+  // Check if within awake hours
+  const shouldNotify = await shouldSendNotification();
+  if (!shouldNotify) {
+    console.log('Skipping daily report - outside awake hours');
     return null;
   }
 

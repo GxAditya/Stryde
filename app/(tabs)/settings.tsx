@@ -8,8 +8,9 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 import { Button } from '@/components/button';
@@ -30,12 +31,13 @@ import {
 } from '@/lib/backup';
 import {
   DataType,
-  ExportFormat,
   exportData,
+  ExportFormat,
   getExportSummary,
   importFromJSON,
   readImportFile,
 } from '@/lib/export';
+import { loadWakeupSettings, saveWakeupSettings, WakeupSettings } from '@/lib/wakeup-settings';
 import { useActivityStore } from '@/stores/activity-store';
 import { useCalibrationStore } from '@/stores/calibration-store';
 import { useGoalStore } from '@/stores/goal-store';
@@ -94,9 +96,14 @@ export default function SettingsScreen() {
     autoBackupEnabled: boolean;
   } | null>(null);
 
+  // Wakeup time settings state
+  const [wakeupSettings, setWakeupSettings] = useState<WakeupSettings | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
   // Load backup config on mount
   useEffect(() => {
     loadBackupSettings();
+    loadWakeupTimeSettings();
   }, []);
 
   const loadBackupSettings = async () => {
@@ -108,6 +115,48 @@ export default function SettingsScreen() {
     setBackupConfig(config);
     setBackupHistory(history);
     setBackupStats(stats);
+  };
+
+  const loadWakeupTimeSettings = async () => {
+    const settings = await loadWakeupSettings();
+    setWakeupSettings(settings);
+  };
+
+  const handleWakeupTimeChange = async (time: Date) => {
+    if (!wakeupSettings) return;
+    
+    const hours = time.getHours().toString().padStart(2, '0');
+    const minutes = time.getMinutes().toString().padStart(2, '0');
+    const newWakeupTime = `${hours}:${minutes}`;
+    
+    const newSettings: WakeupSettings = {
+      ...wakeupSettings,
+      wakeupTime: newWakeupTime,
+    };
+    
+    await saveWakeupSettings(newSettings);
+    setWakeupSettings(newSettings);
+    setShowTimePicker(false);
+  };
+
+  const handleAwakeFilteringToggle = async (value: boolean) => {
+    if (!wakeupSettings) return;
+    
+    const newSettings: WakeupSettings = {
+      ...wakeupSettings,
+      enableAwakeFiltering: value,
+    };
+    
+    await saveWakeupSettings(newSettings);
+    setWakeupSettings(newSettings);
+  };
+
+  // Format time for display
+  const formatTimeDisplay = (time: string): string => {
+    const [hours, minutes] = time.split(':').map(Number);
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
   };
 
   // Refresh stores after import
@@ -282,6 +331,97 @@ ${result.errors.length > 0 ? `\nErrors: ${result.errors.length}` : ''}
       </View>
     </Modal>
   );
+
+  // Render time picker modal
+  const renderTimePickerModal = () => {
+    if (!wakeupSettings) return null;
+    
+    const [hours, minutes] = wakeupSettings.wakeupTime.split(':').map(Number);
+    
+    return (
+      <Modal visible={showTimePicker} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <Card style={styles.timePickerCard}>
+            <ThemedText style={styles.timePickerTitle}>Select Wake Up Time</ThemedText>
+            
+            <View style={styles.timePickerRow}>
+              {/* Hours */}
+              <View style={styles.timePickerColumn}>
+                <TouchableOpacity
+                  onPress={() => {
+                    const newHours = (hours + 1) % 24;
+                    const newSettings = { ...wakeupSettings, wakeupTime: `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}` };
+                    setWakeupSettings(newSettings);
+                  }}
+                  style={styles.timePickerButton}
+                >
+                  <Ionicons name="chevron-up" size={24} color={DesignTokens.primary} />
+                </TouchableOpacity>
+                <ThemedText style={styles.timePickerValue}>{hours.toString().padStart(2, '0')}</ThemedText>
+                <TouchableOpacity
+                  onPress={() => {
+                    const newHours = (hours - 1 + 24) % 24;
+                    const newSettings = { ...wakeupSettings, wakeupTime: `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}` };
+                    setWakeupSettings(newSettings);
+                  }}
+                  style={styles.timePickerButton}
+                >
+                  <Ionicons name="chevron-down" size={24} color={DesignTokens.primary} />
+                </TouchableOpacity>
+              </View>
+              
+              <ThemedText style={styles.timePickerSeparator}>:</ThemedText>
+              
+              {/* Minutes */}
+              <View style={styles.timePickerColumn}>
+                <TouchableOpacity
+                  onPress={() => {
+                    const newMinutes = (minutes + 5) % 60;
+                    const newSettings = { ...wakeupSettings, wakeupTime: `${hours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}` };
+                    setWakeupSettings(newSettings);
+                  }}
+                  style={styles.timePickerButton}
+                >
+                  <Ionicons name="chevron-up" size={24} color={DesignTokens.primary} />
+                </TouchableOpacity>
+                <ThemedText style={styles.timePickerValue}>{minutes.toString().padStart(2, '0')}</ThemedText>
+                <TouchableOpacity
+                  onPress={() => {
+                    const newMinutes = (minutes - 5 + 60) % 60;
+                    const newSettings = { ...wakeupSettings, wakeupTime: `${hours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}` };
+                    setWakeupSettings(newSettings);
+                  }}
+                  style={styles.timePickerButton}
+                >
+                  <Ionicons name="chevron-down" size={24} color={DesignTokens.primary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <View style={styles.timePickerButtons}>
+              <Button
+                title="Cancel"
+                variant="secondary"
+                onPress={() => {
+                  setWakeupSettings({ ...wakeupSettings }); // Reset
+                  setShowTimePicker(false);
+                }}
+                style={styles.timePickerButtonStyle}
+              />
+              <Button
+                title="Save"
+                onPress={async () => {
+                  await saveWakeupSettings(wakeupSettings);
+                  setShowTimePicker(false);
+                }}
+                style={styles.timePickerButtonStyle}
+              />
+            </View>
+          </Card>
+        </View>
+      </Modal>
+    );
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -492,6 +632,74 @@ ${result.errors.length > 0 ? `\nErrors: ${result.errors.length}` : ''}
           )}
         </View>
 
+        {/* Awake Hours Section */}
+        <View style={styles.section}>
+          <ThemedText type="title" style={styles.sectionTitle}>
+            Awake Hours
+          </ThemedText>
+          <ThemedText style={styles.sectionDescription}>
+            Set your wake up time to receive notifications only when you're awake
+          </ThemedText>
+
+          {wakeupSettings && (
+            <Card style={styles.aboutCard}>
+              {/* Enable/Disable Toggle */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <ThemedText style={styles.settingLabel}>Enable Awake Filtering</ThemedText>
+                  <ThemedText style={styles.settingDescription}>
+                    Only send notifications during awake hours
+                  </ThemedText>
+                </View>
+                <Switch
+                  value={wakeupSettings.enableAwakeFiltering}
+                  onValueChange={handleAwakeFilteringToggle}
+                  trackColor={{ false: DesignTokens.border, true: DesignTokens.primary }}
+                  thumbColor={DesignTokens.white}
+                />
+              </View>
+
+              {/* Wake up time picker */}
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <ThemedText style={styles.settingLabel}>Wake up time</ThemedText>
+                  <ThemedText style={styles.settingDescription}>
+                    Notifications will be sent from this time for 16 hours
+                  </ThemedText>
+                </View>
+                <TouchableOpacity
+                  style={styles.timeButton}
+                  onPress={() => {
+                    const [hours, minutes] = wakeupSettings.wakeupTime.split(':').map(Number);
+                    const time = new Date();
+                    time.setHours(hours, minutes, 0, 0);
+                    setShowTimePicker(true);
+                  }}
+                  disabled={!wakeupSettings.enableAwakeFiltering}
+                >
+                  <ThemedText
+                    style={[
+                      styles.timeButtonText,
+                      !wakeupSettings.enableAwakeFiltering && styles.timeButtonDisabled,
+                    ]}
+                  >
+                    {formatTimeDisplay(wakeupSettings.wakeupTime)}
+                  </ThemedText>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={
+                      wakeupSettings.enableAwakeFiltering
+                        ? DesignTokens.textSecondary
+                        : DesignTokens.textSecondary
+                    }
+                  />
+                </TouchableOpacity>
+              </View>
+            </Card>
+          )}
+        </View>
+
         {/* Calibration Section */}
         <View style={styles.section}>
           <ThemedText type="title" style={styles.sectionTitle}>
@@ -540,6 +748,7 @@ ${result.errors.length > 0 ? `\nErrors: ${result.errors.length}` : ''}
       </ScrollView>
 
       {renderProgressModal()}
+      {renderTimePickerModal()}
     </ThemedView>
   );
 }
@@ -781,5 +990,88 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 12,
     color: DesignTokens.textSecondary,
+  },
+  // Awake Hours settings
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: DesignTokens.border,
+  },
+  settingInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: DesignTokens.textPrimary,
+  },
+  settingDescription: {
+    fontSize: 13,
+    color: DesignTokens.textSecondary,
+    marginTop: 2,
+  },
+  timeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: DesignTokens.background,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
+  },
+  timeButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: DesignTokens.primary,
+  },
+  timeButtonDisabled: {
+    color: DesignTokens.textSecondary,
+  },
+  // Time picker modal styles
+  timePickerCard: {
+    width: '85%',
+    maxWidth: 300,
+    padding: 24,
+    backgroundColor: DesignTokens.surface,
+  },
+  timePickerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  timePickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  timePickerColumn: {
+    alignItems: 'center',
+  },
+  timePickerButton: {
+    padding: 8,
+  },
+  timePickerValue: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: DesignTokens.primary,
+    marginVertical: 8,
+  },
+  timePickerSeparator: {
+    fontSize: 36,
+    fontWeight: '700',
+    marginHorizontal: 16,
+  },
+  timePickerButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  timePickerButtonStyle: {
+    flex: 1,
   },
 });

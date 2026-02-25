@@ -218,26 +218,6 @@ export default function HomeScreen() {
                     </View>
 
                     {/* Card 2: Distance */}
-                    <View style={styles.statCard}>
-                        <View style={styles.statHeader}>
-                            <MaterialIcons name="map" size={24} color={DesignTokens.primary} />
-                            <Text style={styles.statLabel}>Distance</Text>
-                        </View>
-                        <Text style={styles.statValue}>
-                            {distanceKm} <Text style={styles.statUnit}>km</Text>
-                        </Text>
-                    </View>
-
-                    {/* Card 3: Active */}
-                    <View style={styles.statCard}>
-                        <View style={styles.statHeader}>
-                            <MaterialIcons name="timer" size={24} color={DesignTokens.primary} />
-                            <Text style={styles.statLabel}>Active</Text>
-                        </View>
-                        <Text style={styles.statValue}>
-                            {activeMinutes} <Text style={styles.statUnit}>min</Text>
-                        </Text>
-                    </View>
                 </View>
 
                 {/* Quick Log: Hydration */}

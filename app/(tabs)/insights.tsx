@@ -30,23 +30,22 @@ function getActivityLevel(steps: number): number {
 }
 
 // Get month transition information for heatmap
-function getMonthTransitions(heatmapData: { date: Date; level: number }[]): { weekIndex: number; month: number }[] {
+function getMonthTransitions(weeks: { date: Date; level: number }[][]): { weekIndex: number; month: number }[] {
     const transitions: { weekIndex: number; month: number }[] = [];
     let currentMonth = -1;
 
-    heatmapData.forEach((day, index) => {
-        const month = day.date.getMonth();
-        
-        // Check if this is the first day of a new month
-        if (month !== currentMonth && day.date.getDate() === 1) {
-            // Calculate which week this month starts in
-            const weekStartIndex = Math.floor(index / 7);
-            if (weekStartIndex > 0) {
-                transitions.push({ weekIndex: weekStartIndex, month });
-            } else if (index === 0) {
-                transitions.push({ weekIndex: 0, month });
+    weeks.forEach((week, weekIndex) => {
+        // Check the first day of this week
+        const firstDay = week[0];
+        if (firstDay) {
+            const month = firstDay.date.getMonth();
+            
+            // Detect month changes by comparing to previous week
+            // If the month is different from currentMonth, it means we've entered a new month
+            if (month !== currentMonth) {
+                transitions.push({ weekIndex, month });
+                currentMonth = month;
             }
-            currentMonth = month;
         }
     });
 
@@ -54,18 +53,21 @@ function getMonthTransitions(heatmapData: { date: Date; level: number }[]): { we
 }
 
 // Get month labels for display above heatmap
-function getMonthLabels(heatmapData: { date: Date; level: number }[]): { weekIndex: number; label: string }[] {
+function getMonthLabels(weeks: { date: Date; level: number }[][]): { weekIndex: number; label: string }[] {
     const labels: { weekIndex: number; label: string }[] = [];
     let lastMonth = -1;
 
-    heatmapData.forEach((day, index) => {
-        const month = day.date.getMonth();
-        const weekIndex = Math.floor(index / 7);
-        const isFirstDayOfMonth = day.date.getDate() === 1;
-        
-        if (isFirstDayOfMonth && month !== lastMonth) {
-            labels.push({ weekIndex, label: MONTH_NAMES[month] });
-            lastMonth = month;
+    weeks.forEach((week, weekIndex) => {
+        const firstDay = week[0];
+        if (firstDay) {
+            const month = firstDay.date.getMonth();
+            
+            // Detect month changes by comparing to previous week
+            // Add a label whenever the month changes from the last one we saw
+            if (month !== lastMonth) {
+                labels.push({ weekIndex, label: MONTH_NAMES[month] });
+                lastMonth = month;
+            }
         }
     });
 
@@ -167,12 +169,13 @@ export default function InsightsScreen() {
         ? weeklyData.reduce((max, d) => d.steps > max.steps ? d : max, weeklyData[0])
         : { day: '-', steps: 0, highlight: false };
 
-    // Group heatmap by weeks
+    // Group heatmap by calendar weeks (Sunday to Saturday)
     const weeks: { date: Date; level: number }[][] = [];
     let currentWeek: { date: Date; level: number }[] = [];
 
-    heatmapData.forEach((day, index) => {
-        if (index % 7 === 0 && currentWeek.length > 0) {
+    heatmapData.forEach((day) => {
+        // Start a new week on Sunday (getDay() === 0)
+        if (day.date.getDay() === 0 && currentWeek.length > 0) {
             weeks.push(currentWeek);
             currentWeek = [];
         }
@@ -181,8 +184,21 @@ export default function InsightsScreen() {
     if (currentWeek.length > 0) weeks.push(currentWeek);
 
     // Get month labels and transitions for the heatmap
-    const monthLabels = getMonthLabels(heatmapData);
-    const monthTransitions = getMonthTransitions(heatmapData);
+    const monthLabels = getMonthLabels(weeks);
+    const monthTransitions = getMonthTransitions(weeks);
+
+    // Calculate the actual pixel position for each month label
+    // Each week is 13px (10px cell + 3px gap), plus 6px for each month break before it
+    const CELL_WIDTH = 10;
+    const CELL_GAP = 3;
+    const MONTH_BREAK_MARGIN = 6;
+    const WEEKS_PER_COLUMN = CELL_WIDTH + CELL_GAP;
+
+    const getLabelPosition = (weekIndex: number): number => {
+        // Count month transitions before this week index
+        const breaksBefore = monthTransitions.filter(t => t.weekIndex < weekIndex).length;
+        return weekIndex * WEEKS_PER_COLUMN + breaksBefore * MONTH_BREAK_MARGIN;
+    };
 
     // Streak-based stories
     const stories = [];
@@ -237,9 +253,7 @@ export default function InsightsScreen() {
                             {/* Month Labels Row */}
                             <View style={styles.monthLabelsRow}>
                                 {monthLabels.map((item, index) => {
-                                    // Calculate marginLeft based on week index and month breaks
-                                    const monthBreaksBefore = monthTransitions.filter(t => t.weekIndex <= item.weekIndex).length;
-                                    const marginLeft = item.weekIndex * 13 + (monthBreaksBefore > 0 ? monthBreaksBefore * 6 : 0);
+                                    const marginLeft = getLabelPosition(item.weekIndex);
                                     
                                     return (
                                         <View key={index} style={[styles.monthLabelWrapper, { marginLeft }]}>
@@ -249,39 +263,41 @@ export default function InsightsScreen() {
                                 })}
                             </View>
 
-                            {/* Heatmap Grid */}
-                            {weeks.map((week, weekIndex) => {
-                                // Check if this week starts a new month
-                                const isMonthStart = monthTransitions.some(t => t.weekIndex === weekIndex);
-                                
-                                return (
-                                    <View 
-                                        key={weekIndex} 
-                                        style={[
-                                            styles.heatmapColumn,
-                                            isMonthStart && styles.heatmapColumnMonthBreak
-                                        ]}
-                                    >
-                                        {week.map((day, dayIndex) => (
-                                            <View
-                                                key={dayIndex}
-                                                style={[
-                                                    styles.heatmapCell,
-                                                    {
-                                                        backgroundColor:
-                                                            day.level === 0 ? (isDark ? '#1c2720' : '#e2e8f0') :
-                                                                day.level === 1 ? '#13EC6D40' :
-                                                                    day.level === 2 ? '#13EC6D80' :
-                                                                        day.level === 3 ? '#13EC6DB0' :
-                                                                            DesignTokens.primary,
-                                                        borderColor: isDark ? '#3b5445' : colors.border,
-                                                    }
-                                                ]}
-                                            />
-                                        ))}
-                                    </View>
-                                );
-                            })}
+                            {/* Heatmap Grid - wrapped in horizontal row */}
+                            <View style={styles.heatmapGridRow}>
+                                {weeks.map((week, weekIndex) => {
+                                    // Check if this week starts a new month
+                                    const isMonthStart = monthTransitions.some(t => t.weekIndex === weekIndex);
+                                    
+                                    return (
+                                        <View 
+                                            key={weekIndex} 
+                                            style={[
+                                                styles.heatmapColumn,
+                                                isMonthStart && styles.heatmapColumnMonthBreak
+                                            ]}
+                                        >
+                                            {week.map((day, dayIndex) => (
+                                                <View
+                                                    key={dayIndex}
+                                                    style={[
+                                                        styles.heatmapCell,
+                                                        {
+                                                            backgroundColor:
+                                                                day.level === 0 ? (isDark ? '#1c2720' : '#e2e8f0') :
+                                                                    day.level === 1 ? '#13EC6D40' :
+                                                                        day.level === 2 ? '#13EC6D80' :
+                                                                            day.level === 3 ? '#13EC6DB0' :
+                                                                                DesignTokens.primary,
+                                                            borderColor: isDark ? '#3b5445' : colors.border,
+                                                        }
+                                                    ]}
+                                                />
+                                            ))}
+                                        </View>
+                                    );
+                                })}
+                            </View>
                         </View>
                     </ScrollView>
 
@@ -428,6 +444,9 @@ const styles = StyleSheet.create({
         borderRadius: 16,
     },
     heatmapContainer: {
+        flexDirection: 'column',
+    },
+    heatmapGridRow: {
         flexDirection: 'row',
         gap: 3,
     },
@@ -442,6 +461,7 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         height: 16,
         position: 'relative',
+        paddingLeft: 0,
     },
     monthLabelWrapper: {
         position: 'absolute',

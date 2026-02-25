@@ -6,19 +6,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import {
-  exportToJSON,
-  importFromJSON,
-  CompleteDataExport,
-  ExportProgressCallback,
-  ImportResult,
-} from './export';
-import {
   getActivities,
+  getCalibrationProfiles,
   getGoals,
   getHydrationLogs,
-  getCalibrationProfiles,
   initDatabase,
 } from './db';
+import {
+  ExportProgressCallback,
+  exportToJSON,
+  importFromJSON,
+  ImportResult
+} from './export';
+import { DEFAULT_WAKEUP_SETTINGS, loadWakeupSettings, saveWakeupSettings, WakeupSettings } from './wakeup-settings';
+
+// Re-export wakeup settings for backward compatibility
+export { DEFAULT_WAKEUP_SETTINGS, loadWakeupSettings, saveWakeupSettings, WakeupSettings };
 
 // Backup metadata storage key
 const BACKUP_METADATA_KEY = 'stryde_backup_metadata';
