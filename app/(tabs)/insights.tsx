@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, Pressable, Dimensions } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, DesignTokens } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useActivityStore } from '@/stores/activity-store';
-import { Activity } from '@/lib/db';
+import { MaterialIcons } from '@expo/vector-icons';
+import React, { useEffect, useState } from 'react';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 const { width } = Dimensions.get('window');
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // GitHub-style heatmap helpers
 function getLast365Days() {
@@ -26,6 +27,49 @@ function getActivityLevel(steps: number): number {
     if (steps < 7000) return 2;
     if (steps < 10000) return 3;
     return 4;
+}
+
+// Get month transition information for heatmap
+function getMonthTransitions(heatmapData: { date: Date; level: number }[]): { weekIndex: number; month: number }[] {
+    const transitions: { weekIndex: number; month: number }[] = [];
+    let currentMonth = -1;
+
+    heatmapData.forEach((day, index) => {
+        const month = day.date.getMonth();
+        
+        // Check if this is the first day of a new month
+        if (month !== currentMonth && day.date.getDate() === 1) {
+            // Calculate which week this month starts in
+            const weekStartIndex = Math.floor(index / 7);
+            if (weekStartIndex > 0) {
+                transitions.push({ weekIndex: weekStartIndex, month });
+            } else if (index === 0) {
+                transitions.push({ weekIndex: 0, month });
+            }
+            currentMonth = month;
+        }
+    });
+
+    return transitions;
+}
+
+// Get month labels for display above heatmap
+function getMonthLabels(heatmapData: { date: Date; level: number }[]): { weekIndex: number; label: string }[] {
+    const labels: { weekIndex: number; label: string }[] = [];
+    let lastMonth = -1;
+
+    heatmapData.forEach((day, index) => {
+        const month = day.date.getMonth();
+        const weekIndex = Math.floor(index / 7);
+        const isFirstDayOfMonth = day.date.getDate() === 1;
+        
+        if (isFirstDayOfMonth && month !== lastMonth) {
+            labels.push({ weekIndex, label: MONTH_NAMES[month] });
+            lastMonth = month;
+        }
+    });
+
+    return labels;
 }
 
 export default function InsightsScreen() {
@@ -136,6 +180,10 @@ export default function InsightsScreen() {
     });
     if (currentWeek.length > 0) weeks.push(currentWeek);
 
+    // Get month labels and transitions for the heatmap
+    const monthLabels = getMonthLabels(heatmapData);
+    const monthTransitions = getMonthTransitions(heatmapData);
+
     // Streak-based stories
     const stories = [];
     if (streak >= 7) {
@@ -186,27 +234,54 @@ export default function InsightsScreen() {
                 <View style={[styles.heatmapCard, { backgroundColor: isDark ? '#1c2720' : colors.white }]}>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                         <View style={styles.heatmapContainer}>
-                            {weeks.map((week, weekIndex) => (
-                                <View key={weekIndex} style={styles.heatmapColumn}>
-                                    {week.map((day, dayIndex) => (
-                                        <View
-                                            key={dayIndex}
-                                            style={[
-                                                styles.heatmapCell,
-                                                {
-                                                    backgroundColor:
-                                                        day.level === 0 ? (isDark ? '#1c2720' : '#e2e8f0') :
-                                                            day.level === 1 ? '#13EC6D40' :
-                                                                day.level === 2 ? '#13EC6D80' :
-                                                                    day.level === 3 ? '#13EC6DB0' :
-                                                                        DesignTokens.primary,
-                                                    borderColor: isDark ? '#3b5445' : colors.border,
-                                                }
-                                            ]}
-                                        />
-                                    ))}
-                                </View>
-                            ))}
+                            {/* Month Labels Row */}
+                            <View style={styles.monthLabelsRow}>
+                                {monthLabels.map((item, index) => {
+                                    // Calculate marginLeft based on week index and month breaks
+                                    const monthBreaksBefore = monthTransitions.filter(t => t.weekIndex <= item.weekIndex).length;
+                                    const marginLeft = item.weekIndex * 13 + (monthBreaksBefore > 0 ? monthBreaksBefore * 6 : 0);
+                                    
+                                    return (
+                                        <View key={index} style={[styles.monthLabelWrapper, { marginLeft }]}>
+                                            <Text style={[styles.monthLabel, { color: isDark ? '#9db9a8' : '#64748b' }]}>{item.label}</Text>
+                                        </View>
+                                    );
+                                })}
+                            </View>
+
+                            {/* Heatmap Grid */}
+                            {weeks.map((week, weekIndex) => {
+                                // Check if this week starts a new month
+                                const isMonthStart = monthTransitions.some(t => t.weekIndex === weekIndex);
+                                
+                                return (
+                                    <View 
+                                        key={weekIndex} 
+                                        style={[
+                                            styles.heatmapColumn,
+                                            isMonthStart && styles.heatmapColumnMonthBreak
+                                        ]}
+                                    >
+                                        {week.map((day, dayIndex) => (
+                                            <View
+                                                key={dayIndex}
+                                                style={[
+                                                    styles.heatmapCell,
+                                                    {
+                                                        backgroundColor:
+                                                            day.level === 0 ? (isDark ? '#1c2720' : '#e2e8f0') :
+                                                                day.level === 1 ? '#13EC6D40' :
+                                                                    day.level === 2 ? '#13EC6D80' :
+                                                                        day.level === 3 ? '#13EC6DB0' :
+                                                                            DesignTokens.primary,
+                                                        borderColor: isDark ? '#3b5445' : colors.border,
+                                                    }
+                                                ]}
+                                            />
+                                        ))}
+                                    </View>
+                                );
+                            })}
                         </View>
                     </ScrollView>
 
@@ -358,6 +433,25 @@ const styles = StyleSheet.create({
     },
     heatmapColumn: {
         gap: 3,
+    },
+    heatmapColumnMonthBreak: {
+        marginLeft: 6,
+    },
+    monthLabelsRow: {
+        flexDirection: 'row',
+        marginBottom: 8,
+        height: 16,
+        position: 'relative',
+    },
+    monthLabelWrapper: {
+        position: 'absolute',
+    },
+    monthLabelContainer: {
+        position: 'absolute',
+    },
+    monthLabel: {
+        fontSize: 10,
+        fontWeight: '600',
     },
     heatmapCell: {
         width: 10,
